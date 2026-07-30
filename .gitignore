@@ -1,0 +1,18 @@
+# 凭据/本地机密 —— 绝不提交
+*.txt
+token
+token.txt
+.token
+*.deb
+deploy.py
+deploy_*.py
+*.log
+
+# Theos 构建产物
+obj/
+packages/
+.theos/
+
+# 系统
+.DS_Store
+Thumbs.db
