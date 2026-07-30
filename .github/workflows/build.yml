@@ -1,0 +1,36 @@
+name: Build Tweak
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Theos (env + iPhoneOS SDK)
+        uses: Randomblock1/theos-action@v1
+        with:
+          theos-ref: master
+          sdk-version: '16.5'
+          sdk-type: iPhoneOS
+          tweak-package: com.example.helmtweak
+
+      - name: Install packaging deps (macOS)
+        run: brew install ldid dpkg
+
+      - name: Build package
+        run: make clean && make package
+
+      - name: Upload deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HelmTweak-rootless
+          path: packages/*.deb
+          if-no-files-found: error

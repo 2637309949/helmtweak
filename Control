@@ -1,0 +1,9 @@
+Package: com.example.helmtweak
+Name: HelmTweak
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: Minimal Hello demo tweak for Dopamine rootless (ElleKit). Prints hello to syslog on SpringBoard launch. arm64 + arm64e.
+Maintainer: You <you@example.com>
+Author: You
+Section: Tweaks
+Depends: mobilesubstrate
