@@ -3,9 +3,7 @@
 
 #import <Preferences/Preferences.h>
 
-@interface HelmTweakPrefsListController : PSListController {
-    NSArray *_specifiers;
-}
+@interface HelmTweakPrefsListController : PSListController
 @end
 
 @implementation HelmTweakPrefsListController
