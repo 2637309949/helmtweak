@@ -4,7 +4,7 @@
 #import <Preferences/Preferences.h>
 
 @interface PSListController (HelmTweakPrivate)
-- (NSArray *)loadSpecifiersFromPlistName:(NSString *)name;
+- (NSMutableArray *)loadSpecifiersFromPlistName:(NSString *)name;
 @end
 
 @interface HelmTweakPrefsListController : PSListController
