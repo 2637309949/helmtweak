@@ -35,6 +35,17 @@
         }
         CFRelease(v);
     }
+
+    // DIAGNOSTIC (1.0.15): record that this action ran + what value it read
+    NSDictionary *marker = @{
+        @"lastActionAt": [[NSDate date] description],
+        @"lastActionReadsEnabled": @(on),
+    };
+    CFPreferencesSetAppValue(CFSTR("actionMarker"),
+                             (__bridge CFPropertyListRef)marker,
+                             CFSTR("com.witchan.ios-mcp.preferences"));
+    CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
+
     CFStringRef name = on ? CFSTR("com.witchan.ios-mcp.control/start")
                           : CFSTR("com.witchan.ios-mcp.control/stop");
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
