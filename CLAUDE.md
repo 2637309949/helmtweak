@@ -23,23 +23,27 @@ Project memory for fast pickup. Read this before touching the build.
 
 ## File map
 
-- [Makefile](Makefile) — `TARGET := iphone:clang:16.5:15.0`, `ARCHS = arm64 arm64e`, `THEOS_PACKAGE_SCHEME = rootless`, `INSTALL_TARGET_PROCESSES = SpringBoard`, `TWEAK_NAME = HelmTweak`, `HelmTweak_ENTITLEMENTS = entitlements.plist`.
+- [Makefile](Makefile) — `TARGET := iphone:clang:16.5:15.0`, `ARCHS = arm64 arm64e`, `THEOS_PACKAGE_SCHEME = rootless` (default; can override to `roothide` for local build on roothide device), `INSTALL_TARGET_PROCESSES = SpringBoard`, `TWEAK_NAME = HelmTweak HelmMCP`, `HelmTweak_ENTITLEMENTS = entitlements.plist`. HelmMCP scheme 自适应段（`ifeq ($(THEOS_PACKAGE_SCHEME),roothide) ... HelmMCP_LIBRARIES = roothide + -DMCP_ROOTHIDE=1`）。`after-stage::` 段把 build 好的 helpers bundle 进 deb staging（rootless 只 bundle mcp-logreader，roothide 还加 mcp-root + chmod 4755）。
 - [Tweak.x](Tweak.x) — `%hook SpringBoard` on `applicationDidFinishLaunching:`, `NSLog` hello. ARC on.
 - [HelmTweak.plist](HelmTweak.plist) — **filter plist**, `Filter.Bundles = [com.apple.springboard]`. Name MUST equal `TWEAK_NAME`.
 - [control](control) — `Package: com.example.helmtweak`, `Architecture: iphoneos-arm64` (rootless fixed field), `Depends: mobilesubstrate`. **Filename is lowercase `control`** (see gotchas).
 - [entitlements.plist](entitlements.plist) — `no-sandbox`, `no-container`, `platform-application`. Embedded via `*_ENTITLEMENTS`.
-- [.github/workflows/build.yml](.github/workflows/build.yml) — macos-latest, `Randomblock1/theos-action@v1` for env+SDK, then explicit `make clean && make package`, then `upload-artifact` of `packages/*.deb`.
+- [.github/workflows/build.yml](.github/workflows/build.yml) — macos-latest, `Randomblock1/theos-action@v1` for env+SDK, helper pre-build step (`make` in each `tools/helpers/<name>/`), then `make clean && make package` at root, then `upload-artifact` of `packages/*.deb`. **Only builds rootless** (theos-action doesn't ship libroothide).
+- [tools/mcp/](tools/mcp/) — HelmMCP dylib source（forked from `witchan/ios-mcp`, GPL-3.0）: Tweak.x / MCPServer / 各 Manager / 私有 header / `roothide_shim.h` (rootless 下提供 `rootfs()`/`jbroot()` fallback) / `IOSMCPPreferences.h` (默认端口 8686)。
+- [tools/helpers/](tools/helpers/) — 通用 CLI helpers 子项目（每个自己 Makefile，scheme 自适应）：`mcp-logreader/` (连 diagnosticd 拿 unified log，rootless + roothide 都 build)、`mcp-root/` (setuid root 命令白名单，只 roothide build + chmod 4755)。`README.md` 列出 Phase 2c 后续要 fork 的 helper（mcp-roothelper / mcp-appsync / mcp-ldid）+ 各自卡点。
 - [HelmTweakPrefs.mm](HelmTweakPrefs.mm) — PreferenceBundle binary; `PSListController` subclass, override `specifiers` with `[self loadSpecifiersFromPlistName:@"Root" target:self]` (see gotchas — two-arg form is load-bearing).
+- [MCPPrefsListController.mm](MCPPrefsListController.mm) — MCP 子面板 controller。PSButtonCell + `[spec setName:]` + `[self reload]` 刷新 button title（见 gotchas）。
 - [HelmTweakPrefs/Info.plist](HelmTweakPrefs/Info.plist) — bundle metadata, `CFBundleIdentifier = com.example.helmtweakprefs`, `NSPrincipalClass = HelmTweakPrefsListController`. The whole `HelmTweakPrefs/` folder is the bundle resource dir (mapped via `HelmTweakPrefs_RESOURCE_DIRS` in Makefile).
-- [HelmTweakPrefs/Root.plist](HelmTweakPrefs/Root.plist) — panel spec: one `PSGroupCell` with `label = hello`. Filename MUST be `Root.plist` (not `<BundleName>.plist`).
+- [HelmTweakPrefs/Root.plist](HelmTweakPrefs/Root.plist) — root panel spec, one `PSGroupCell` + one `PSLinkCell` (`detail = MCPPrefsListController`) routing to MCP subpanel.
+- [HelmTweakPrefs/MCP.plist](HelmTweakPrefs/MCP.plist) — MCP subpanel spec: `PSButtonCell` (`action = toggleServer:`, `id = mcpToggleButton`) + port edit + debug switch.
 - [layout/Library/PreferenceLoader/Preferences/HelmTweakPrefs.plist](layout/Library/PreferenceLoader/Preferences/HelmTweakPrefs.plist) — Settings root entry; wrapped in `entry` dict with `detail = HelmTweakPrefsListController`.
 
 ## Hard constraints (do not regress)
 
 1. `ARCHS = arm64 arm64e` both — never drop one.
-2. `THEOS_PACKAGE_SCHEME = rootless` — never set to rootful.
+2. `THEOS_PACKAGE_SCHEME = rootless | roothide` (dual-scheme support, never rootful) — source + Makefile 自适应，CI 只 ship rootless（theos-action 不带 libroothide），roothide build 在 roothide 设备本地跑。
 3. `INSTALL_TARGET_PROCESSES = SpringBoard`.
-4. CI runs on **macos-latest**; build command is literally `make clean && make package`; deb uploaded as a downloadable artifact.
+4. CI runs on **macos-latest**; build command is literally `make clean && make package` (with a pre-step that builds CLI helpers in `tools/helpers/*/`); deb uploaded as a downloadable artifact. CI only ships rootless — roothide build must run on a roothide device (`make clean && make package THEOS_PACKAGE_SCHEME=roothide`).
 5. CI-built deb is the sole distribution. No manual `cp dylib/plist` deploy scripts.
 
 ### HelmCore SDK 层铁律（跨 iOS 版本支持，不可妥协）

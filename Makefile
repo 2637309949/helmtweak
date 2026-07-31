@@ -15,7 +15,7 @@ HelmTweak_FRAMEWORKS = Foundation UIKit
 HelmTweak_ENTITLEMENTS = entitlements.plist
 
 # ===== HelmMCP — forked from witchan/ios-mcp (GPL-3.0), core dylib only =====
-# Helpers (mcp-root/mcp-ldid/mcp-logreader/AppSync/mcp-roothelper) 留到 Phase 2c
+# Helpers (mcp-root/mcp-ldid/mcp-logreader/AppSync/mcp-roothelper) 见 tools/helpers/
 HelmMCP_FILES = tools/mcp/Tweak.x tools/mcp/MCPServer.m tools/mcp/MCPLogger.m \
                 tools/mcp/HIDManager.m tools/mcp/ScreenManager.m tools/mcp/ClipboardManager.m \
                 tools/mcp/AppManager.m tools/mcp/AccessibilityManager.m tools/mcp/TextInputManager.m \
@@ -23,9 +23,18 @@ HelmMCP_FILES = tools/mcp/Tweak.x tools/mcp/MCPServer.m tools/mcp/MCPLogger.m \
                 tools/mcp/MCPProcessUtil.m tools/mcp/MCPAXQueryContext.m tools/mcp/MCPAXRemoteContextResolver.m \
                 tools/mcp/MCPUIElementSerializer.m tools/mcp/MCPUIElementsFacade.m tools/mcp/MCPAXAttributeBridge.m \
                 tools/mcp/MCPAXNodeSource.m
-HelmMCP_CFLAGS = -fobjc-arc -Wno-unused-function -Wno-deprecated-declarations -DMCP_ROOTLESS=1
+HelmMCP_CFLAGS = -fobjc-arc -Wno-unused-function -Wno-deprecated-declarations
 HelmMCP_FRAMEWORKS = IOKit UIKit CoreGraphics QuartzCore MobileCoreServices AVFoundation Security Vision
 HelmMCP_ENTITLEMENTS = tools/mcp/entitlements.plist
+# 双 scheme 自适应（抄上游 ios-mcp 模式）：
+#   roothide -> 链真 <roothide.h>（libroothide）+ -DMCP_ROOTHIDE=1
+#   rootless -> 用 tools/mcp/roothide_shim.h fallback，-DMCP_ROOTLESS=1
+ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
+    HelmMCP_LIBRARIES = roothide
+    HelmMCP_CFLAGS += -DMCP_ROOTHIDE=1
+else ifeq ($(THEOS_PACKAGE_SCHEME),rootless)
+    HelmMCP_CFLAGS += -DMCP_ROOTLESS=1
+endif
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 
@@ -38,3 +47,18 @@ HelmTweakPrefs_PRIVATE_FRAMEWORKS = Preferences
 HelmTweakPrefs_INSTALL_PATH = /Library/PreferenceBundles
 HelmTweakPrefs_RESOURCE_DIRS = HelmTweakPrefs
 include $(THEOS_MAKE_PATH)/bundle.mk
+
+# ===== Bundle CLI helpers into deb staging dir =====
+# 每个 helper 自己一个 Makefile 在 tools/helpers/<name>/，主项目 build 前要先 `make` 它们。
+# after-stage 把 build 好的 binary 拷进 staging，按 scheme 决定哪些 helper 进。
+# - rootless: 只 bundle mcp-logreader（其他 helper 在 rootless sandbox 下没意义，source 走 sudo fallback）
+# - roothide: bundle 全部 + mcp-root 加 setuid bit (chmod 4755)
+HELPERS_DIR := $(THEOS_PROJECT_DIR)/tools/helpers
+
+after-stage::
+	$(ECHO_NOTHING)mkdir -p "$(THEOS_STAGING_DIR)/usr/bin"$(ECHO_END)
+	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-logreader/.theos/obj/mcp-logreader" "$(THEOS_STAGING_DIR)/usr/bin/mcp-logreader"$(ECHO_END)
+ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
+	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-root/.theos/obj/mcp-root" "$(THEOS_STAGING_DIR)/usr/bin/mcp-root"$(ECHO_END)
+	$(ECHO_NOTHING)chmod 4755 "$(THEOS_STAGING_DIR)/usr/bin/mcp-root"$(ECHO_END)
+endif

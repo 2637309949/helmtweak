@@ -8,6 +8,9 @@ deploy.py
 deploy_*.py
 diag*.py
 fetch*.py
+prep*.py
+probe*.py
+read*.py
 _diag_binary/
 *.log
 
