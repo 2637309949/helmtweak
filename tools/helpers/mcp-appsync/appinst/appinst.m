@@ -6,7 +6,9 @@
 #import <Security/Security.h>
 #import <spawn.h>
 #import <sys/stat.h>
+#ifdef MCP_ROOTHIDE
 #include <roothide.h>
+#endif
 #import <unistd.h>
 #import "unarchive.h"
 #import "zip.h"
