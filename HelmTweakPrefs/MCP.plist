@@ -10,7 +10,27 @@
 			<key>label</key>
 			<string>MCP 工具（基于 ios-mcp）</string>
 			<key>footerText</key>
-			<string>以下配置写入 com.witchan.ios-mcp.preferences 域，ios-mcp 主 dylib 监听变化自动响应。toggleServer/QR/复制提示词等依赖 controller action 的项阶段 2b 接入。</string>
+			<string>以下配置写入 com.witchan.ios-mcp.preferences 域，ios-mcp 主 dylib 监听 darwin notification 自动响应。默认关闭，开启后立即启动 MCP server。</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>服务开关</string>
+		</dict>
+		<dict>
+			<key>action</key>
+			<string>setMCPEnabled:</string>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<false/>
+			<key>defaults</key>
+			<string>com.witchan.ios-mcp.preferences</string>
+			<key>key</key>
+			<string>enabled</string>
+			<key>label</key>
+			<string>启用 MCP 服务</string>
 		</dict>
 		<dict>
 			<key>cell</key>
