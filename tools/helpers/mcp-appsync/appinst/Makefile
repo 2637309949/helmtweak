@@ -16,7 +16,7 @@ mcp-appinst_CCFLAGS += -std=c++11 -stdlib=libc++ -fobjc-arc -include ./zip.h -I 
 mcp-appinst_CFLAGS += -fobjc-arc -include ./zip.h -I . -fvisibility=hidden -Wno-unused-property-ivar
 mcp-appinst_FRAMEWORKS = Foundation ImageIO CoreGraphics Security
 mcp-appinst_PRIVATE_FRAMEWORKS = MobileCoreServices
-mcp-appinst_LDFLAGS += $(CURDIR)/../../../third_party/libzip/.theos/obj/zip.a
+mcp-appinst_LDFLAGS += $(CURDIR)/../../../../third_party/libzip/.theos/obj/zip.a
 mcp-appinst_LIBRARIES = z
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
     mcp-appinst_CFLAGS += -DMCP_ROOTHIDE=1
@@ -24,8 +24,8 @@ ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
     mcp-appinst_LIBRARIES += roothide
     mcp-appinst_CODESIGN_FLAGS = -Smcp-appinst_roothide_entitlements.plist
 else
-    mcp-appinst_CFLAGS += -DMCP_ROOTLESS=1 -include ../../../tools/mcp/roothide_shim.h
-    mcp-appinst_CCFLAGS += -DMCP_ROOTLESS=1 -include ../../../tools/mcp/roothide_shim.h
+    mcp-appinst_CFLAGS += -DMCP_ROOTLESS=1 -include ../../../../tools/mcp/roothide_shim.h
+    mcp-appinst_CCFLAGS += -DMCP_ROOTLESS=1 -include ../../../../tools/mcp/roothide_shim.h
     mcp-appinst_CODESIGN_FLAGS = -Smcp-appinst_entitlements.plist
 endif
 mcp-appinst_INSTALL_PATH = /usr/bin
