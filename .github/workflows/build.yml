@@ -27,13 +27,15 @@ jobs:
       - name: Build CLI helpers (rootless)
         # 每个 helper 自己一个 Makefile，subproject 形式。主 Makefile 的 after-stage:: 会
         # 从 .theos/obj/ 拷贝 build 好的 binary 进 deb staging。
-        # - mcp-logreader / mcp-root: 独立 CLI（mcp-root 仅 roothide bundle，rootless 仍 build 不影响）
+        # - mcp-logreader / mcp-root / mcp-ldid: 独立 CLI（mcp-root 仅 roothide bundle，
+        #   rootless 仍 build 不影响；mcp-ldid 用 vendored libcrypto.a + libplist-2.0.a，
+        #   CI 上能 build）
         # - mcp-appsync/: aggregate（两个 AppSync dylib）—— bundle on rootless + roothide
         # - mcp-appsync/appinst / mcp-roothelper: 依赖 $(THEOS)/lib/libzip.a，theos-action
         #   不带，CI 上跳过；roothide 设备本地 build。install_app 在 rootless 上 fallback
         #   到 LSApplicationWorkspace（配合 mcp-appsync-installd.dylib 注入 installd）。
         run: |
-          for h in mcp-logreader mcp-root; do
+          for h in mcp-logreader mcp-root mcp-ldid; do
             echo "==> building $h"
             (cd tools/helpers/$h && make clean && make THEOS_PACKAGE_SCHEME=rootless) || exit 1
           done

@@ -1,8 +1,8 @@
 Package: com.example.helmtweak
 Name: HelmTweak
-Version: 1.0.23
+Version: 1.0.24
 Architecture: iphoneos-arm64
-Description: Minimal Hello demo tweak + HelmMCP (forked from witchan/ios-mcp, GPL-3.0) + AppSync Unified (forked, GPL-3.0) for Dopamine rootless (ElleKit). arm64 + arm64e.
+Description: Minimal Hello demo tweak + HelmMCP (forked from witchan/ios-mcp, GPL-3.0) + AppSync Unified (forked, GPL-3.0) + mcp-ldid (forked from ProcursusSDK, LGPL-2.1+) for Dopamine rootless (ElleKit). arm64 + arm64e.
 Maintainer: You <you@example.com>
 Author: You
 Section: Tweaks

@@ -13,12 +13,11 @@
 | mcp-appsync | AppSync Unified dylibs（installd + FrontBoard）—— 注入系统进程做 fakesign 绕过 | ✅ dylib | ✅ dylib |
 | mcp-appsync/appinst | 独立 IPA 安装 CLI（zip + LSApplicationWorkspace）| ❌ CI 跳过（theos-action 不带 libzip.a），fallback 到 LSApplicationWorkspace method 2 | ✅ 本地 build |
 | mcp-roothelper | setuid IPA 安装器（读 IPA bundle id，delegate 给 trollstorehelper 或 mcp-appinst）| ❌ setuid 不可用 + libzip.a 缺失 | ✅ 本地 build + chmod 4755 |
+| mcp-ldid | 独立 codesign 替代 CLI（fakesign + 真签名 + plist 签名注入）| ✅ vendored libcrypto.a + libplist-2.0.a，CI 能 build | ✅ 同 rootless |
 
 ## Phase 2c 后续迭代（deferred）
 
-| helper | 卡在哪 |
-|---|---|
-| mcp-ldid | Makefile 引 `../third_party/ldid/` (git submodule) + `../third_party/procursus-sdk/` vendored OpenSSL + libplist — 太重 |
+无（Phase 2c 完成）。
 
 ## 构建
 

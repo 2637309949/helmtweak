@@ -60,6 +60,7 @@ after-stage::
 	$(ECHO_NOTHING)mkdir -p "$(THEOS_STAGING_DIR)/usr/bin"$(ECHO_END)
 	$(ECHO_NOTHING)mkdir -p "$(MSDYNLIB_DIR)"$(ECHO_END)
 	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-logreader/.theos/obj/mcp-logreader" "$(THEOS_STAGING_DIR)/usr/bin/mcp-logreader"$(ECHO_END)
+	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-ldid/.theos/obj/mcp-ldid" "$(THEOS_STAGING_DIR)/usr/bin/mcp-ldid"$(ECHO_END)
 	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-appsync/.theos/obj/mcp-appsync-installd.dylib" "$(MSDYNLIB_DIR)/mcp-appsync-installd.dylib"$(ECHO_END)
 	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-appsync/AppSyncUnified-installd/mcp-appsync-installd.plist" "$(MSDYNLIB_DIR)/mcp-appsync-installd.plist"$(ECHO_END)
 	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-appsync/.theos/obj/mcp-appsync-frontboard.dylib" "$(MSDYNLIB_DIR)/mcp-appsync-frontboard.dylib"$(ECHO_END)
