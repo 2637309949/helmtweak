@@ -26,12 +26,19 @@ jobs:
 
       - name: Build CLI helpers (rootless)
         # 每个 helper 自己一个 Makefile，subproject 形式。主 Makefile 的 after-stage:: 会
-        # 从 .theos/obj/ 拷贝 build 好的 binary 进 deb staging。rootless 只 bundle mcp-logreader。
+        # 从 .theos/obj/ 拷贝 build 好的 binary 进 deb staging。
+        # - mcp-logreader / mcp-root: 独立 CLI（mcp-root 仅 roothide bundle，rootless 仍 build 不影响）
+        # - mcp-appsync/: aggregate（两个 AppSync dylib）+ appinst/ 子目录 CLI
+        # appinst 依赖 $(THEOS)/lib/libzip.a —— Theos 自带，CI 上应可用。
         run: |
           for h in mcp-logreader mcp-root; do
             echo "==> building $h"
             (cd tools/helpers/$h && make clean && make THEOS_PACKAGE_SCHEME=rootless) || exit 1
           done
+          echo "==> building mcp-appsync aggregate (AppSync dylibs)"
+          (cd tools/helpers/mcp-appsync && make clean && make THEOS_PACKAGE_SCHEME=rootless) || exit 1
+          echo "==> building mcp-appsync/appinst CLI"
+          (cd tools/helpers/mcp-appsync/appinst && make clean && make THEOS_PACKAGE_SCHEME=rootless) || exit 1
 
       - name: Build package
         run: make clean && make package

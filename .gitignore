@@ -10,7 +10,9 @@ diag*.py
 fetch*.py
 prep*.py
 probe*.py
+purge*.py
 read*.py
+verify*.py
 _diag_binary/
 *.log
 

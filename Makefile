@@ -51,13 +51,20 @@ include $(THEOS_MAKE_PATH)/bundle.mk
 # ===== Bundle CLI helpers into deb staging dir =====
 # 每个 helper 自己一个 Makefile 在 tools/helpers/<name>/，主项目 build 前要先 `make` 它们。
 # after-stage 把 build 好的 binary 拷进 staging，按 scheme 决定哪些 helper 进。
-# - rootless: 只 bundle mcp-logreader（其他 helper 在 rootless sandbox 下没意义，source 走 sudo fallback）
-# - roothide: bundle 全部 + mcp-root 加 setuid bit (chmod 4755)
+# - rootless: mcp-logreader + mcp-appsync (dylibs + appinst CLI)
+# - roothide: 上面全部 + mcp-root (setuid, chmod 4755)
 HELPERS_DIR := $(THEOS_PROJECT_DIR)/tools/helpers
+MSDYNLIB_DIR = $(THEOS_STAGING_DIR)/Library/MobileSubstrate/DynamicLibraries
 
 after-stage::
 	$(ECHO_NOTHING)mkdir -p "$(THEOS_STAGING_DIR)/usr/bin"$(ECHO_END)
+	$(ECHO_NOTHING)mkdir -p "$(MSDYNLIB_DIR)"$(ECHO_END)
 	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-logreader/.theos/obj/mcp-logreader" "$(THEOS_STAGING_DIR)/usr/bin/mcp-logreader"$(ECHO_END)
+	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-appsync/appinst/.theos/obj/mcp-appinst" "$(THEOS_STAGING_DIR)/usr/bin/mcp-appinst"$(ECHO_END)
+	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-appsync/.theos/obj/mcp-appsync-installd.dylib" "$(MSDYNLIB_DIR)/mcp-appsync-installd.dylib"$(ECHO_END)
+	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-appsync/AppSyncUnified-installd/mcp-appsync-installd.plist" "$(MSDYNLIB_DIR)/mcp-appsync-installd.plist"$(ECHO_END)
+	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-appsync/.theos/obj/mcp-appsync-frontboard.dylib" "$(MSDYNLIB_DIR)/mcp-appsync-frontboard.dylib"$(ECHO_END)
+	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-appsync/AppSyncUnified-FrontBoard/mcp-appsync-frontboard.plist" "$(MSDYNLIB_DIR)/mcp-appsync-frontboard.plist"$(ECHO_END)
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-root/.theos/obj/mcp-root" "$(THEOS_STAGING_DIR)/usr/bin/mcp-root"$(ECHO_END)
 	$(ECHO_NOTHING)chmod 4755 "$(THEOS_STAGING_DIR)/usr/bin/mcp-root"$(ECHO_END)
