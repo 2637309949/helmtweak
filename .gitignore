@@ -6,6 +6,9 @@ token.txt
 *.deb
 deploy.py
 deploy_*.py
+diag*.py
+fetch*.py
+_diag_binary/
 *.log
 
 # Theos 构建产物
