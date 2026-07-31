@@ -1,7 +1,7 @@
 // MCPPrefsListController — MCP 工具子面板
 // PSSwitchCell 在切换时会先把新值写入 com.witchan.ios-mcp.preferences/enabled，
-// 然后调用本类的 setMCPEnabled:，这里 post darwin notification
-// 通知 ios-mcp 主 dylib 启动/停止 MCP server。
+// 然后调用 auto-derive 出来的 setEnabled:（命名必须匹配 key=enabled）。
+// 这里 post darwin notification 通知 HelmMCP dylib 启动/停止 MCP server。
 
 #import <Preferences/Preferences.h>
 #import <CoreFoundation/CoreFoundation.h>
@@ -22,8 +22,10 @@
     return _specifiers;
 }
 
-- (void)setMCPEnabled:(PSSpecifier *)spec {
-    // PSSwitchCell 已把新值写入 com.witchan.ios-mcp.preferences/enabled
+// PSSwitchCell auto-derives set<Key>: from key=enabled.
+// Method name MUST be setEnabled: for the cell to call it.
+- (void)setEnabled:(PSSpecifier *)spec {
+    // PSSwitchCell has just written the new value to com.witchan.ios-mcp.preferences/enabled
     BOOL on = NO;
     CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("enabled"),
                                                     CFSTR("com.witchan.ios-mcp.preferences"));
@@ -36,7 +38,7 @@
         CFRelease(v);
     }
 
-    // DIAGNOSTIC (1.0.15): record that this action ran + what value it read
+    // DIAGNOSTIC (1.0.16): record that this action ran + what value it read
     NSDictionary *marker = @{
         @"lastActionAt": [[NSDate date] description],
         @"lastActionReadsEnabled": @(on),

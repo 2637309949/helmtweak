@@ -19,8 +19,6 @@
 			<string>服务开关</string>
 		</dict>
 		<dict>
-			<key>action</key>
-			<string>setMCPEnabled:</string>
 			<key>cell</key>
 			<string>PSSwitchCell</string>
 			<key>default</key>
