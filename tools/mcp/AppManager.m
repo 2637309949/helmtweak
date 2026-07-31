@@ -4,6 +4,8 @@
 #import "SpringBoardPrivate.h"
 #ifdef MCP_ROOTHIDE
 #include <roothide.h>
+#else
+#import "roothide_shim.h"
 #endif
 #import <Security/Security.h>
 #import <UIKit/UIKit.h>
