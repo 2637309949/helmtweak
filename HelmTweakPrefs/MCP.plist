@@ -8,20 +8,16 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>HelmTweak 工具箱</string>
+			<string>MCP tool — WIP</string>
 		</dict>
 		<dict>
 			<key>cell</key>
-			<string>PSLinkCell</string>
-			<key>detail</key>
-			<string>MCPPrefsListController</string>
-			<key>label</key>
-			<string>MCP</string>
-			<key>isController</key>
-			<true/>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>后续 fork ios-mcp 源码进 tools/mcp/，重命名为 com.example.helmtweak.mcp，把 ScreenManager/OCRManager/TextInputManager/UIElementsFacade 抽到 SDK/HelmCore/。</string>
 		</dict>
 	</array>
 	<key>title</key>
-	<string>HelmTweak</string>
+	<string>MCP</string>
 </dict>
 </plist>

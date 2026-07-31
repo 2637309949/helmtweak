@@ -18,7 +18,7 @@ include $(THEOS_MAKE_PATH)/tweak.mk
 
 # ===== PreferenceBundle: Settings.app 入口，显示 hello =====
 BUNDLE_NAME = HelmTweakPrefs
-HelmTweakPrefs_FILES = HelmTweakPrefs.mm
+HelmTweakPrefs_FILES = HelmTweakPrefs.mm MCPPrefsListController.mm
 HelmTweakPrefs_CFLAGS = -fobjc-arc -Wno-unused-variable
 HelmTweakPrefs_FRAMEWORKS = UIKit Preferences
 HelmTweakPrefs_PRIVATE_FRAMEWORKS = Preferences
