@@ -104,8 +104,10 @@ These all bit us on 2026-07-31 while building `HelmTweakPrefs`. Re-deriving them
     </dict>
   </dict>
   ```
-- **iOS device has no `/usr/bin/log` CLI.** Don't put `log show` in deploy scripts or expect to read NSLog output on-device. Use a visible PreferenceBundle panel as the verification surface, or pipe to a file via the dylib (`/var/mobile/helmtweak.log` with no-sandbox entitlement).
-- **Settings.app caches specifier list.** After reinstalling a prefs bundle, `killall -9 Preferences` (and optionally `killall -9 cfprefsd`) to force re-scan. `sbreload` alone doesn't always kill Settings.
+- **iOS device has no `/usr/bin/log` CLI.** Don't put `log show` in deploy scripts or expect to read NSLog output on-device. Use a visible PreferenceBundle panel as the verification surface, or pipe to a file via the dylib (`/var/mobile/helmtweak.log` with no-sandbox entitlement). For prefs controller code, write traces to `/var/mobile/helmtweak_prefs.log` via `NSFileHandle` — same trick, since `NSLog` goes to unified log which has no on-device reader.
+- **Settings.app caches specifier list.** After reinstalling a prefs bundle, `killall -9 Preferences` (and optionally `killall -9 cfprefsd`) to force re-scan. `sbreload` alone doesn't always kill Settings. **Critically: if you deployed a new controller class with new action selectors but Settings is still running with the OLD controller cached, taps will silently fail** (action selector doesn't resolve, no crash, no visible response). Always kill Settings after deploying a prefs bundle change.
+- **PSSwitchCell on iOS 15+ does NOT call its `action:` selector reliably.** We tried `setMCPEnabled:` (1.0.13), `setEnabled:` auto-derive (1.0.16) — neither fired. Switch to **PSButtonCell with `action: toggleServer:`** which reliably fires. This is the witchan/ios-mcp working pattern.
+- **PSButtonCell title refresh: use `[spec setName:]` + `[self reload]`, NOT `setProperty:forKey:@"label"`.** `setProperty:forKey:@"label"` writes to the specifier's internal properties dict, but PSButtonCell reads its title from `specifier.name`. `[self reloadSpecifier:spec animated:YES]` also doesn't force the title to redraw on iOS 15+. Result: `toggleServer:` fires, darwin notification posts, server actually starts (probe confirms), but button text visually stays at the plist default forever. Fix: declare `- (void)setName:(NSString *)name` on PSSpecifier via private category, call `[spec setName:@"新文字"]` then `[self reload]` (whole-table rebuild). Verified working in 1.0.19.
 
 ## How to iterate
 
@@ -118,6 +120,7 @@ These all bit us on 2026-07-31 while building `HelmTweakPrefs`. Re-deriving them
 ## CI failure triage (known patterns)
 
 - `missing a filter property list` → filter plist missing/misnamed (see Gotchas).
-- `brew install ldid dpkg` fails on macos-latest → tap changed; pin or use `ldid` from theos-action if it pre-installs.
-- SDK fetch fails → theos-action's `sdk-version` (16.5); check theos/sdks availability, bump if yanked.
+- `brew install ldid dpkg` fails on macos-latest → tap changed; pin or use `ldid` from theos-action if it pre-installs. Newer theos-action already `brew install ldid make` itself, so the workflow step can be just `brew install dpkg`.
+- `Unexpected input(s) 'theos-ref', 'sdk-version', 'sdk-type', 'tweak-package'` → upstream `Randomblock1/theos-action@v1` changed its input contract. New valid inputs are `theos-dir`/`theos-src`/`theos-sdks`/`theos-sdks-branch`/`orion`, all with working defaults (sdks repo default includes iPhoneOS16.5.sdk). Just drop the `with:` block entirely.
+- SDK fetch fails → theos-action's sdks repo; check theos/sdks availability.
 - deb not found in `packages/*.deb` → build step failed earlier; read full log, not just the upload step.
