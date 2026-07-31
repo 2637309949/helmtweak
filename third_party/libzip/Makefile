@@ -17,7 +17,11 @@ include $(THEOS)/makefiles/common.mk
 LIBRARY_NAME = zip
 
 EXCLUDED := zip_algorithm_bzip2.c zip_algorithm_xz.c zip_algorithm_zstd.c \
-            zip_crypto_commoncrypto.c zip_crypto_gnutls.c zip_crypto_openssl.c zip_crypto_win.c
+            zip_crypto_commoncrypto.c zip_crypto_gnutls.c zip_crypto_openssl.c zip_crypto_win.c \
+            zip_random_uwp.c zip_random_win32.c \
+            zip_source_file_win32_ansi.c zip_source_file_win32_named.c \
+            zip_source_file_win32_utf16.c zip_source_file_win32_utf8.c \
+            zip_source_winzip_aes_decode.c zip_source_winzip_aes_encode.c zip_winzip_aes.c
 
 zip_FILES = $(filter-out $(EXCLUDED), $(wildcard *.c))
 zip_CFLAGS = -DHAVE_CONFIG_H -I. -fvisibility=hidden -Wno-everything -Wno-error
