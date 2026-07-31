@@ -19,16 +19,14 @@
 			<string>服务开关</string>
 		</dict>
 		<dict>
+			<key>action</key>
+			<string>toggleServer:</string>
 			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>default</key>
-			<false/>
-			<key>defaults</key>
-			<string>com.witchan.ios-mcp.preferences</string>
-			<key>key</key>
-			<string>enabled</string>
+			<string>PSButtonCell</string>
+			<key>id</key>
+			<string>mcpToggleButton</string>
 			<key>label</key>
-			<string>启用 MCP 服务</string>
+			<string>启动 MCP 服务</string>
 		</dict>
 		<dict>
 			<key>cell</key>
