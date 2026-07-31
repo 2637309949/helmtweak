@@ -3,6 +3,10 @@
 
 #import <Preferences/Preferences.h>
 
+@interface PSListController (HelmTweakPrivate)
+- (NSArray *)loadSpecifiersFromPlistName:(NSString *)name;
+@end
+
 @interface HelmTweakPrefsListController : PSListController
 @end
 
