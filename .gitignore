@@ -7,6 +7,7 @@ token.txt
 deploy.py
 deploy_*.py
 diag*.py
+debug*.py
 fetch*.py
 prep*.py
 probe*.py
