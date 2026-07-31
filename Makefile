@@ -68,4 +68,6 @@ ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-root/.theos/obj/mcp-root" "$(THEOS_STAGING_DIR)/usr/bin/mcp-root"$(ECHO_END)
 	$(ECHO_NOTHING)chmod 4755 "$(THEOS_STAGING_DIR)/usr/bin/mcp-root"$(ECHO_END)
 	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-appsync/appinst/.theos/obj/mcp-appinst" "$(THEOS_STAGING_DIR)/usr/bin/mcp-appinst"$(ECHO_END)
+	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-roothelper/.theos/obj/mcp-roothelper" "$(THEOS_STAGING_DIR)/usr/bin/mcp-roothelper"$(ECHO_END)
+	$(ECHO_NOTHING)chmod 4755 "$(THEOS_STAGING_DIR)/usr/bin/mcp-roothelper"$(ECHO_END)
 endif
