@@ -35,6 +35,11 @@ static void HelmPrefsLog(NSString *fmt, ...) {
 @interface PSListController (HelmTweakPrivate)
 - (NSMutableArray *)loadSpecifiersFromPlistName:(NSString *)name target:(id)target;
 - (void)reloadSpecifier:(PSSpecifier *)specifier animated:(BOOL)animated;
+- (void)reload;
+@end
+
+@interface PSSpecifier (HelmTweakPrivate)
+- (void)setName:(NSString *)name;
 @end
 
 @interface MCPPrefsListController : PSListController
@@ -121,8 +126,8 @@ static void HelmPrefsLog(NSString *fmt, ...) {
     PSSpecifier *spec = [self specifierForID:@"mcpToggleButton"];
     HelmPrefsLog(@"  specifierForID mcpToggleButton = %@", spec);
     if (spec) {
-        [spec setProperty:@"检测中..." forKey:@"label"];
-        [self reloadSpecifier:spec animated:NO];
+        [spec setName:@"检测中..."];
+        [self reload];
     }
 
     __weak typeof(self) weakSelf = self;
@@ -140,10 +145,11 @@ static void HelmPrefsLog(NSString *fmt, ...) {
             if (!self) return;
             self.serverRunning = isUp;
             PSSpecifier *s = [self specifierForID:@"mcpToggleButton"];
-            HelmPrefsLog(@"  main-thread specifierForID = %@", s);
+            HelmPrefsLog(@"  main-thread specifierForID = %@ name=%@", s, s.name);
             if (s) {
-                [s setProperty:isUp ? @"关闭 MCP 服务" : @"启动 MCP 服务" forKey:@"label"];
-                [self reloadSpecifier:s animated:YES];
+                [s setName:isUp ? @"关闭 MCP 服务" : @"启动 MCP 服务"];
+                [self reload];
+                HelmPrefsLog(@"  name set to %@, table reloaded", s.name);
             }
         });
     });
@@ -160,9 +166,9 @@ static void HelmPrefsLog(NSString *fmt, ...) {
                                                     : CFSTR("com.witchan.ios-mcp.control/stop"),
                                         NULL, NULL, true);
 
-    [spec setProperty:shouldStart ? @"启动中..." : @"关闭中..." forKey:@"label"];
-    [self reloadSpecifier:spec animated:YES];
-    HelmPrefsLog(@"  label set to %@, reloaded", shouldStart ? @"启动中..." : @"关闭中...");
+    [spec setName:shouldStart ? @"启动中..." : @"关闭中..."];
+    [self reload];
+    HelmPrefsLog(@"  name set to %@, table reloaded", spec.name);
 
     // 等 1.5s 让 dylib 起/停 server，再 probe 实际状态刷新 label
     __weak typeof(self) weakSelf = self;
