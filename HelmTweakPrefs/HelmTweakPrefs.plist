@@ -6,10 +6,12 @@
 	<array>
 		<dict>
 			<key>cell</key>
-			<string>PSGroupSpecifier</string>
+			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>hello</string>
 		</dict>
 	</array>
+	<key>title</key>
+	<string>HelmTweak</string>
 </dict>
 </plist>
