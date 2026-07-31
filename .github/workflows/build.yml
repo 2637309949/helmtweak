@@ -16,14 +16,11 @@ jobs:
 
       - name: Setup Theos (env + iPhoneOS SDK)
         uses: Randomblock1/theos-action@v1
-        with:
-          theos-ref: master
-          sdk-version: '16.5'
-          sdk-type: iPhoneOS
-          tweak-package: com.example.helmtweak
+        # action 现接受: theos-dir / theos-src / theos-sdks / theos-sdks-branch / orion
+        # 全部有默认值，sdks repo 默认含 iPhoneOS16.5.sdk。
 
       - name: Install packaging deps (macOS)
-        run: brew install ldid dpkg
+        run: brew install dpkg
 
       - name: Build package
         run: make clean && make package
