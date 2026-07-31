@@ -16,7 +16,7 @@ mcp-appinst_CCFLAGS += -std=c++11 -stdlib=libc++ -fobjc-arc -include ./zip.h -I 
 mcp-appinst_CFLAGS += -fobjc-arc -include ./zip.h -I . -fvisibility=hidden -Wno-unused-property-ivar
 mcp-appinst_FRAMEWORKS = Foundation ImageIO CoreGraphics Security
 mcp-appinst_PRIVATE_FRAMEWORKS = MobileCoreServices
-mcp-appinst_LDFLAGS += $(THEOS)/lib/libzip.a
+mcp-appinst_LDFLAGS += $(CURDIR)/../../../third_party/libzip/.theos/obj/zip.a
 mcp-appinst_LIBRARIES = z
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
     mcp-appinst_CFLAGS += -DMCP_ROOTHIDE=1

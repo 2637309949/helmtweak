@@ -16,7 +16,7 @@ mcp-roothelper_FILES = main.m
 mcp-roothelper_CFLAGS += -fobjc-arc -include ../mcp-appsync/appinst/zip.h -I../mcp-appsync/appinst -fvisibility=hidden
 mcp-roothelper_CCFLAGS += -fobjc-arc -std=c++11 -stdlib=libc++ -include ../mcp-appsync/appinst/zip.h -I../mcp-appsync/appinst -fvisibility=hidden
 mcp-roothelper_FRAMEWORKS = Foundation
-mcp-roothelper_LDFLAGS += $(THEOS)/lib/libzip.a
+mcp-roothelper_LDFLAGS += $(CURDIR)/../../../third_party/libzip/.theos/obj/zip.a
 mcp-roothelper_LIBRARIES = z
 mcp-roothelper_USE_MODULES = 0
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
