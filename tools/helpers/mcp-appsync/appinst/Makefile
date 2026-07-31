@@ -24,8 +24,8 @@ ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
     mcp-appinst_LIBRARIES += roothide
     mcp-appinst_CODESIGN_FLAGS = -Smcp-appinst_roothide_entitlements.plist
 else
-    mcp-appinst_CFLAGS += -DMCP_ROOTLESS=1 -include $(THEOS_PROJECT_DIR)/tools/mcp/roothide_shim.h
-    mcp-appinst_CCFLAGS += -DMCP_ROOTLESS=1 -include $(THEOS_PROJECT_DIR)/tools/mcp/roothide_shim.h
+    mcp-appinst_CFLAGS += -DMCP_ROOTLESS=1 -include ../../../tools/mcp/roothide_shim.h
+    mcp-appinst_CCFLAGS += -DMCP_ROOTLESS=1 -include ../../../tools/mcp/roothide_shim.h
     mcp-appinst_CODESIGN_FLAGS = -Smcp-appinst_entitlements.plist
 endif
 mcp-appinst_INSTALL_PATH = /usr/bin
