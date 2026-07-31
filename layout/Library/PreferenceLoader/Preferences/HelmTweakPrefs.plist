@@ -2,13 +2,18 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>cell</key>
-	<string>PSLinkCell</string>
-	<key>label</key>
-	<string>HelmTweak</string>
-	<key>bundle</key>
-	<string>HelmTweakPrefs</string>
-	<key>isController</key>
-	<true/>
+	<key>entry</key>
+	<dict>
+		<key>cell</key>
+		<string>PSLinkCell</string>
+		<key>bundle</key>
+		<string>HelmTweakPrefs</string>
+		<key>detail</key>
+		<string>HelmTweakPrefsListController</string>
+		<key>label</key>
+		<string>HelmTweak</string>
+		<key>isController</key>
+		<true/>
+	</dict>
 </dict>
 </plist>
