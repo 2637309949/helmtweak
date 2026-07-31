@@ -801,8 +801,7 @@ static HelmMCPPortState HelmMCPProbePort(uint16_t port) {
     NSString *urlStr = [NSString stringWithFormat:@"http://127.0.0.1:%u/mcp", (unsigned)port];
     NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:urlStr]];
     req.HTTPMethod = @"POST";
-    req.timeoutIntervalForRequest = 0.5;
-    req.timeoutIntervalForResource = 0.5;
+    [req setTimeoutInterval:0.5];
     [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     req.HTTPBody = [@"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}" dataUsingEncoding:NSUTF8StringEncoding];
 
