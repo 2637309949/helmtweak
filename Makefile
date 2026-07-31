@@ -58,7 +58,9 @@ MSDYNLIB_DIR = $(THEOS_STAGING_DIR)/Library/MobileSubstrate/DynamicLibraries
 
 after-stage::
 	$(ECHO_NOTHING)mkdir -p "$(THEOS_STAGING_DIR)/usr/bin"$(ECHO_END)
+	$(ECHO_NOTHING)mkdir -p "$(THEOS_STAGING_DIR)/usr/lib"$(ECHO_END)
 	$(ECHO_NOTHING)mkdir -p "$(MSDYNLIB_DIR)"$(ECHO_END)
+	$(ECHO_NOTHING)cp "$(THEOS_PROJECT_DIR)/SDK/HelmCore/.theos/obj/HelmCore.dylib" "$(THEOS_STAGING_DIR)/usr/lib/HelmCore.dylib"$(ECHO_END)
 	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-logreader/.theos/obj/mcp-logreader" "$(THEOS_STAGING_DIR)/usr/bin/mcp-logreader"$(ECHO_END)
 	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-ldid/.theos/obj/mcp-ldid" "$(THEOS_STAGING_DIR)/usr/bin/mcp-ldid"$(ECHO_END)
 	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-appsync/appinst/.theos/obj/mcp-appinst" "$(THEOS_STAGING_DIR)/usr/bin/mcp-appinst"$(ECHO_END)

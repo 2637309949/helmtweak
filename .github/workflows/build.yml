@@ -24,6 +24,11 @@ jobs:
       - name: Install packaging deps (macOS)
         run: brew install dpkg
 
+      - name: Build HelmCore SDK library (rootless)
+        # HelmCore = SDK 层（跨工具共享），先 build，主项目 after-stage 会把它拷进 /usr/lib。
+        run: |
+          (cd SDK/HelmCore && make clean && make THEOS_PACKAGE_SCHEME=rootless) || exit 1
+
       - name: Build CLI helpers (rootless)
         # 每个 helper 自己一个 Makefile，subproject 形式。主 Makefile 的 after-stage:: 会
         # 从 .theos/obj/ 拷贝 build 好的 binary 进 deb staging。
