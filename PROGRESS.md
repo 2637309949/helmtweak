@@ -1,54 +1,78 @@
-# PROGRESS — 2026-07-31 截止点
+# PROGRESS — 2026-07-31 收尾（Phase 2c done，准备 Phase 3）
 
-明天打开先看这个 + [CLAUDE.md](CLAUDE.md)，直接接着干。
+下次打开先看这个 + [CLAUDE.md](CLAUDE.md)，直接接着干。
 
-## 已完成 ✅
+## 当前状态 ✅
 
-- **工程**：Theos rootless (ElleKit) tweak demo `HelmTweak`，5 文件 + filter plist + README/CLAUDE。
-- **CI**：GitHub Actions (`theos-action@v1`, macos-latest) 全绿，产出 deb 作为 artifact `HelmTweak-rootless`。
-- **命名坑修复**：`Control` → 小写 `control`（Theos `deb.mk` 大小写敏感 + GitHub macos runner 大小写敏感 FS）。已沉淀进 [CLAUDE.md](CLAUDE.md) Gotchas。
-- **远程**：https://github.com/2637309949/helmtweak （`main`，commit `edd82c4` 起的工程文件已推；`.gitignore`/本进度待提交）。
-- **装机**：deb 已装到 iPhone XS（机型 `iPhone11,2` = A12，目标范围内）。
-  - 安装：`dpkg -i` rc=0，包 `com.example.helmtweak 1.0.0-1+debug` setup 成功，Sileo triggers 跑了。
-  - 文件就位：`/var/jb/Library/MobileSubstrate/DynamicLibraries/HelmTweak.dylib`(166KB) + `HelmTweak.plist`(420B)。
-  - respring：`sbreload` 成功，SpringBoard 重启（pid 2752，as mobile）。
+- **Phase 2c 完成**：4 个 helper 全 fork + libzip 源码 vendor 完，CI 全绿。
+- **版本**：`1.0.25`（commit `b588b3c`），CI run [30636675253](https://github.com/2637309949/helmtweak/actions/runs/30636675253)。
+- **远程**：https://github.com/2637309949/helmtweak （`main`）。
+- **装机**：iPhone XS（`iPhone11,2` = A12），root `@172.30.13.135` pw `12345`。
+  - `dpkg -i` rc=0，所有 5 个 helper 就位：`mcp-logreader` / `mcp-ldid` / `mcp-appinst` / `mcp-appsync-installd.dylib` / `mcp-appsync-frontboard.dylib`。
+  - MCP server up，46 tools 含 `install_app` / `uninstall_app`。
+  - `mcp-appinst` 跑起来出 usage banner → libzip 静态链接 OK，无 missing dylib。
 
-## 当前卡点 ⚠️（明天第一件事）
+## Phase 2c 已完成的 5 个迭代
 
-**hello log 没在设备上读到——但不是 hook 没触发，是 iOS 没有 `log` CLI。**
+1. `mcp-logreader` — diagnosticd unified log，rootless+roothide 都 build。
+2. `mcp-root` — setuid root 命令白名单，roothide-only + chmod 4755。
+3. `mcp-roothelper` — setuid IPA 安装器，roothide-only（依赖 `roothide.h` + libroothide）。
+4. `mcp-ldid` — codesign CLI，vendored `libcrypto.a` + `libplist-2.0.a`（ProcursusSDK）。
+5. `libzip` vendor — 源码进 [third_party/libzip/](third_party/libzip/)，deflate-only，CI 能 build。`mcp-appinst` 现在 rootless 也 bundle。
 
-- iOS 没有 macOS 的 `/usr/bin/log`（`log` 在设备 zsh 里是 shell 内建，不是那个工具），`log show` 在设备上不存在。
-- NSLog 走 unified logging，设备端默认读不到；常规做法是 **Mac 端 `idevicesyslog`**（本机未装）。
-- 当前 deb 只 `NSLog`，没有写文件，所以设备上没法 `cat` 验证。
+### iter 5 撞过的坑（已沉淀到 [memory](C:\Users\Doubl\.claude\projects\x--repo-helmtweak\memory\feedback_theos_action_libzip.md)，简记）
 
-## 明天的下一步（二选一，推荐 A）
+- libzip `zip_random_uwp.c` / `zip_source_file_win32*.c` 要排除（`<windows.h>`）。
+- `zip_winzip_aes*.c` / `zip_source_winzip_aes_*.c` 要排除（`#error "no crypto backend found"`，我们没有 crypto backend；caller 都 `#if defined(HAVE_CRYPTO)` 守好，link-safe）。
+- `zip_err_str.c` 是 CMake 生成的，源码不带 — 写了 [gen_zip_err_str.py](third_party/libzip/gen_zip_err_str.py)（Python 移植 `GenerateZipErrorStrings.cmake`）。
+- Theos `library.mk` 默认只 build dylib，要 `zip_LINKAGE_TYPE = static` 才 emit `.a`。
+- mcp-appinst 在 `tools/helpers/mcp-appsync/appinst/`（**4 层深**）→ `../../../../` 才到 repo root；mcp-roothelper / mcp-ldid 在 `tools/helpers/<name>/`（3 层深）→ `../../../`。差一层 CI 才暴露。
 
-### A. 改 tweak 写文件（推荐，最稳、可复现）
-1. 改 [Tweak.x](Tweak.x)：`applicationDidFinishLaunching:` 里除了 `NSLog`，再 append 一行到 `/var/mobile/helmtweak.log`（dylib 带 no-sandbox/no-container，能写）。
-2. `git push` → CI 重建 → 用 [token.txt](token.txt) 拉 artifact → 跑 [deploy.py](deploy.py) → `cat /var/mobile/helmtweak.log` 见 hello。闭环。
+## 下次干啥：Phase 3 — HelmCore SDK 层
 
-### B. Mac 端读 unified log
-- 装 `idevicesyslog`（libimobiledevice）或 `pymobiledevice3`（`pip install pymobiledevice3`），连手机抓 syslog 过滤 `HelmTweak`。不用改 deb，但跨网络（手机在热点 172.20.10.6）抓 lockdown/syslog_relay 不一定通，可能要 USB。
+**目标**：把 HelmMCP 里散在各 Manager 的 iOS 版本/私有 API 调用抽到 `SDK/HelmCore/` dylib，工具层（`tools/*`、`HelmTweakPrefs/`）只走 HelmCore 高层 API，不直接碰私有 header / 版本号 / 私有 selector。
 
-## 本地机密文件（均已 .gitignore，别提交）
+**铁律**（CLAUDE.md 已有，重点重申）：
+- 工具层**绝不直接**接触：私有 header、`iOSVersion == 17` 硬编码、`[SBIconController ...]` 直接调、`#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 170000` 编译期单独分支。
+- 一律经 HelmCore：`SDK/HelmCore/Private/HelmPrivateHeaders.h` 集中声明私有 header；`HelmSystemInfo` 暴露 `iOSMajorVersion` / `isRootless` / `jbRootPath` / `+pathFor:`；私有 selector 走 `NSClassFromString` + `NSSelectorFromString` + `dlsym` 软引用，找不到走 capability query 返回 nil/fallback，**绝不 crash**。
+- 每个 Manager 暴露 `+ (BOOL)isSupportedOnCurrentIOS`，工具启动先问再做。
+- runtime `@available(iOS X, *)` 分派，**不**靠编译期 `#if`。
+- 工具 manifest 字段 `minIOS` / `maxIOS`，不兼容的 cell 灰掉。
+- fat arm64 + arm64e，rootless 路径自动从 `HelmSystemInfo` 拿。
+
+**起步顺序（建议）**：
+1. 建 `SDK/HelmCore/` 目录 + Makefile（Theos `library.mk`，`LIBRARY_NAME = HelmCore`，dual scheme 自适应）。
+2. 第一个 Manager 抽 `HelmSystemInfo`（最基础，其他都依赖它）—— 把 [tools/mcp/roothide_shim.h](tools/mcp/roothide_shim.h) 的 `rootfs()` / `jbroot()` 升级成正式 API。
+3. 抽 `HelmScreenManager` + `HelmOCRManager`（已有实现，搬 + 加 `+isSupportedOnCurrentIOS` + 把硬编码 iOS 版本分支改成 runtime `@available`）。
+4. HelmMCP 各 Manager 改成调用 HelmCore，验证行为不变。
+5. 工具 manifest 加 `minIOS` / `maxIOS` 字段，prefs 列表里灰掉不兼容 cell。
+
+## 复现部署（下次直接跑）
+
+```sh
+# 1. 拉 CI artifact（gh CLI 已装在 /c/Program Files/GitHub CLI/）
+"/c/Program Files/GitHub CLI/gh.exe" run download <run-id> --repo 2637309949/helmtweak -D /tmp/helm_artifact
+
+# 2. deploy 脚本（已存在 deploy_1_0_25.py，下次版本变了改 DEB_LOCAL 路径）
+python deploy_1_0_25.py
+#   流程：SFTP put deb → dpkg -i → ls 验证 → mcp-appinst 跑一下 → MCP probe
+```
+
+## 本地机密文件（均已 .gitignore，**别提交**）
 
 | 文件 | 内容 |
 |---|---|
-| `token.txt` | GitHub fine-grained PAT（Actions/Contents read on helmtweak）|
-| `mobile.txt` | 手机 ssh 指令 |
-| `deploy.py` | 部署脚本（硬编码 172.20.10.6 root/12345）|
-| `helmtweak.deb` | 本机下载的 deb 副本 |
+| `token.txt` | GitHub fine-grained PAT（如果还在用 gh CLI 就不需要） |
+| `mobile.txt` | 手机 ssh 指令 + test 编译机 sudo 密码 |
+| `deploy*.py` | 各版本部署脚本（硬编码手机 IP/pw） |
+| `debug*.py` / `diag*.py` / `probe*.py` / `purge*.py` / `fetch*.py` | 临时诊断脚本 |
+| `packages/` | 本机 build 的 deb |
+| `_diag_binary/` | 反编译产物 |
 
-手机：`root@172.20.10.6` 密码 `12345`（也 `mobile/12345`，但 dpkg 要 root）。
+## 不要做的事
 
-## 复现部署（明天直接跑）
-
-```sh
-# 拉 artifact（artifact id 会变，先 list 再下）
-TOKEN=$(cat token.txt)
-curl -sL -H "Authorization: Bearer $TOKEN" \
-  "https://api.github.com/repos/2637309949/helmtweak/actions/artifacts"   # 取最新 id
-# 下 zip → 解出 deb → cp 到 ./helmtweak.deb → python deploy.py
-```
-
-`deploy.py` 流程：SFTP 推 deb → `dpkg -i` → `sbreload` → 重连读 log（**注意：当前 deploy.py 用 `/usr/bin/log show`，设备上不存在，明天按方案 A 改成 `cat /var/mobile/helmtweak.log`**）。
+- **不写 spec / 设计文档**（CLAUDE.md 硬约束）。brainstorming 到「present design」就停，用户说 OK 直接 code。
+- **不要 bundle rootful scheme**。dual-scheme = rootless + roothide，永远不 ship rootful。
+- **不要降 ARCHS**。`arm64 arm64e` 都要。
+- **不要手动 `cp dylib` 部署**。CI 是唯一发布渠道。
+- **不要碰 `--no-verify` / `--no-gpg-sign`**。
