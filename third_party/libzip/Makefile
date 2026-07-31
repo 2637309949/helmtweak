@@ -15,6 +15,9 @@ export DEBUG = 0
 include $(THEOS)/makefiles/common.mk
 
 LIBRARY_NAME = zip
+# library.mk only emits .a when LINKAGE_TYPE = static (or both).
+# mcp-appinst + mcp-roothelper link the .a directly.
+zip_LINKAGE_TYPE = static
 
 EXCLUDED := zip_algorithm_bzip2.c zip_algorithm_xz.c zip_algorithm_zstd.c \
             zip_crypto_commoncrypto.c zip_crypto_gnutls.c zip_crypto_openssl.c zip_crypto_win.c \
