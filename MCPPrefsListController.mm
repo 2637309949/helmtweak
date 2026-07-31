@@ -1,40 +1,18 @@
 // MCPPrefsListController — MCP 工具子面板
-// 诊断版：所有关键路径写 /var/mobile/helmtweak_prefs.log 以便远程排查
-// 为什么用文件日志：iOS 设备无 `log show` CLI，NSLog 进 unified log 不好取。
+//
+// 进面板时 probe :8686/mcp 实际状态：
+//   - server 起来了 -> label = "关闭 MCP 服务"，pref enabled = True
+//   - server 没起 -> label = "启动 MCP 服务"，pref enabled = False
+// 重启手机后 autostart 失败的话，进面板会显示 server 实际没起，不会误显示开。
+//
+// PSButtonCell title 刷新用 [spec setName:] + [self reload]。
+// setProperty:forKey:@"label" + reloadSpecifier:animated: 在 iOS 15+ 不重画 title（1.0.17/1.0.18 已确认）。
 
 #import <Preferences/Preferences.h>
 #import <CoreFoundation/CoreFoundation.h>
 
-static NSString *HelmPrefsLogPath(void) {
-    return @"/var/mobile/helmtweak_prefs.log";
-}
-
-static void HelmPrefsLog(NSString *fmt, ...) NS_FORMAT_FUNCTION(1, 2);
-static void HelmPrefsLog(NSString *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    NSString *msg = [[NSString alloc] initWithFormat:fmt arguments:args];
-    va_end(args);
-
-    NSDateFormatter *df = [[NSDateFormatter alloc] init];
-    [df setDateFormat:@"HH:mm:ss.SSS"];
-    NSString *line = [NSString stringWithFormat:@"[%@] %@\n", [df stringFromDate:[NSDate date]], msg];
-
-    NSFileManager *fm = [NSFileManager defaultManager];
-    NSString *path = HelmPrefsLogPath();
-    if (![fm fileExistsAtPath:path]) {
-        [line writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    } else {
-        NSFileHandle *h = [NSFileHandle fileHandleForWritingAtPath:path];
-        [h seekToEndOfFile];
-        [h writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
-        [h closeFile];
-    }
-}
-
 @interface PSListController (HelmTweakPrivate)
 - (NSMutableArray *)loadSpecifiersFromPlistName:(NSString *)name target:(id)target;
-- (void)reloadSpecifier:(PSSpecifier *)specifier animated:(BOOL)animated;
 - (void)reload;
 @end
 
@@ -49,20 +27,13 @@ static void HelmPrefsLog(NSString *fmt, ...) {
 @implementation MCPPrefsListController
 
 - (NSArray *)specifiers {
-    HelmPrefsLog(@"specifiers called");
     if (!_specifiers) {
         _specifiers = [self loadSpecifiersFromPlistName:@"MCP" target:self];
-        HelmPrefsLog(@"loaded %lu specifiers", (unsigned long)_specifiers.count);
-        for (PSSpecifier *s in _specifiers) {
-            HelmPrefsLog(@"  spec id=%@ cell=%@ label=%@ action=%@",
-                         s.identifier, [s propertyForKey:@"cell"], [s propertyForKey:@"label"], [s propertyForKey:@"action"]);
-        }
     }
     return _specifiers;
 }
 
 - (void)viewWillAppear:(BOOL)animated {
-    HelmPrefsLog(@"viewWillAppear called");
     [super viewWillAppear:animated];
     [self refreshServerStatus];
 }
@@ -122,9 +93,7 @@ static void HelmPrefsLog(NSString *fmt, ...) {
 }
 
 - (void)refreshServerStatus {
-    HelmPrefsLog(@"refreshServerStatus called");
     PSSpecifier *spec = [self specifierForID:@"mcpToggleButton"];
-    HelmPrefsLog(@"  specifierForID mcpToggleButton = %@", spec);
     if (spec) {
         [spec setName:@"检测中..."];
         [self reload];
@@ -135,7 +104,6 @@ static void HelmPrefsLog(NSString *fmt, ...) {
         __strong typeof(weakSelf) self = weakSelf;
         if (!self) return;
         BOOL isUp = [self probeMCPServerOnPort:[self configuredPort]];
-        HelmPrefsLog(@"  probe isUp=%d", (int)isUp);
 
         // 同步 pref 跟实际状态走
         [self writeEnabledPref:isUp];
@@ -145,21 +113,17 @@ static void HelmPrefsLog(NSString *fmt, ...) {
             if (!self) return;
             self.serverRunning = isUp;
             PSSpecifier *s = [self specifierForID:@"mcpToggleButton"];
-            HelmPrefsLog(@"  main-thread specifierForID = %@ name=%@", s, s.name);
             if (s) {
                 [s setName:isUp ? @"关闭 MCP 服务" : @"启动 MCP 服务"];
                 [self reload];
-                HelmPrefsLog(@"  name set to %@, table reloaded", s.name);
             }
         });
     });
 }
 
 - (void)toggleServer:(PSSpecifier *)spec {
-    HelmPrefsLog(@"toggleServer CALLED spec=%@ serverRunning=%d", spec, (int)self.serverRunning);
     BOOL shouldStart = !self.serverRunning;
     [self writeEnabledPref:shouldStart];
-    HelmPrefsLog(@"  posting darwin %@ notification", shouldStart ? @"start" : @"stop");
 
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
                                         shouldStart ? CFSTR("com.witchan.ios-mcp.control/start")
@@ -168,7 +132,6 @@ static void HelmPrefsLog(NSString *fmt, ...) {
 
     [spec setName:shouldStart ? @"启动中..." : @"关闭中..."];
     [self reload];
-    HelmPrefsLog(@"  name set to %@, table reloaded", spec.name);
 
     // 等 1.5s 让 dylib 起/停 server，再 probe 实际状态刷新 label
     __weak typeof(self) weakSelf = self;
