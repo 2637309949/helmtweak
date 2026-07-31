@@ -2,6 +2,11 @@
 
 Project memory for fast pickup. Read this before touching the build.
 
+## 协作规则（硬约束，优先级最高）
+
+- **不要写设计文档 / spec 文档**：brainstorming 到「present design」一步为止，口述方案给用户，用户说 OK 就直接开始 code。跳过 writing-plans / executing-plans / spec 文档落盘这些步骤。
+- 例外：用户明确说「写文档」才写。
+
 ## What this project IS (and is NOT)
 
 - A **Theos jailbreak tweak** (Logos) for **Dopamine rootless / ElleKit**.
