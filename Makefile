@@ -60,7 +60,6 @@ after-stage::
 	$(ECHO_NOTHING)mkdir -p "$(THEOS_STAGING_DIR)/usr/bin"$(ECHO_END)
 	$(ECHO_NOTHING)mkdir -p "$(MSDYNLIB_DIR)"$(ECHO_END)
 	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-logreader/.theos/obj/mcp-logreader" "$(THEOS_STAGING_DIR)/usr/bin/mcp-logreader"$(ECHO_END)
-	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-appsync/appinst/.theos/obj/mcp-appinst" "$(THEOS_STAGING_DIR)/usr/bin/mcp-appinst"$(ECHO_END)
 	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-appsync/.theos/obj/mcp-appsync-installd.dylib" "$(MSDYNLIB_DIR)/mcp-appsync-installd.dylib"$(ECHO_END)
 	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-appsync/AppSyncUnified-installd/mcp-appsync-installd.plist" "$(MSDYNLIB_DIR)/mcp-appsync-installd.plist"$(ECHO_END)
 	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-appsync/.theos/obj/mcp-appsync-frontboard.dylib" "$(MSDYNLIB_DIR)/mcp-appsync-frontboard.dylib"$(ECHO_END)
@@ -68,4 +67,5 @@ after-stage::
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-root/.theos/obj/mcp-root" "$(THEOS_STAGING_DIR)/usr/bin/mcp-root"$(ECHO_END)
 	$(ECHO_NOTHING)chmod 4755 "$(THEOS_STAGING_DIR)/usr/bin/mcp-root"$(ECHO_END)
+	$(ECHO_NOTHING)cp "$(HELPERS_DIR)/mcp-appsync/appinst/.theos/obj/mcp-appinst" "$(THEOS_STAGING_DIR)/usr/bin/mcp-appinst"$(ECHO_END)
 endif
