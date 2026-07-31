@@ -2,7 +2,9 @@
 #import "AccessibilityManager.h"
 #import "MCPProcessUtil.h"
 #import "SpringBoardPrivate.h"
+#ifdef MCP_ROOTHIDE
 #include <roothide.h>
+#endif
 #import <Security/Security.h>
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>

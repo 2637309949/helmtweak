@@ -1,5 +1,7 @@
 #import "MCPProcessUtil.h"
+#ifdef MCP_ROOTHIDE
 #include <roothide.h>
+#endif
 #import <dispatch/dispatch.h>
 #import <errno.h>
 #import <fcntl.h>
