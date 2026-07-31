@@ -42,6 +42,27 @@ Project memory for fast pickup. Read this before touching the build.
 4. CI runs on **macos-latest**; build command is literally `make clean && make package`; deb uploaded as a downloadable artifact.
 5. CI-built deb is the sole distribution. No manual `cp dylib/plist` deploy scripts.
 
+### HelmCore SDK 层铁律（跨 iOS 版本支持，不可妥协）
+
+工具层（`tools/*`、`HelmTweakPrefs/`）**绝不直接**接触以下任一项，必须经 HelmCore 暴露的高层 API：
+
+- **私有 header**（`SpringBoardPrivate.h` 等任何 `_` 开头类或 SB 类的私有 selector）→ 经 `SDK/HelmCore/Private/HelmPrivateHeaders.h` 集中声明，由 HelmCore 各 Manager 内部调用。
+- **iOS 版本号硬编码**（`if (iOSVersion == 17)` 之类）→ 经 `HelmCore/System/HelmSystemInfo.h` 暴露的 `iOSMajorVersion`/`isRootless`/`jbRootPath` 等查询。所有写死 `/var/jb/...` 路径必须改成 `[HelmSystemInfo pathFor:HelmPathMobileSubstrate]` 之类。
+- **私有 class/selector 直接调**（`[SBIconController ...]`）→ 一律走 `NSClassFromString` + `NSSelectorFromString` + `dlsym` 软引用，找不到时走 capability query 返回 nil/fallback，**绝不 crash**。
+- **版本分支写死**（`#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 170000` 之类编译期分支单独使用）→ 必须配合 runtime `@available(iOS X, *)` 分派到不同实现方法。SDK 编译目标是多版本 SDK 矩阵（CI 跑 `[15.0, 16.5, 17.0]`），任一 SDK 编译通过即可，但运行时分派必须由 runtime `@available` 决定。
+
+每个 HelmCore Manager 必须暴露 `+ (BOOL)isSupportedOnCurrentIOS`，工具启动先问再做：
+
+```objc
+if (![HelmOCRManager isSupportedOnCurrentIOS]) { /* 显示降级提示 */ return; }
+UIImage *img = [HelmScreenManager captureScreen];
+NSString *text = [HelmOCRManager recognizeTextInImage:img];
+```
+
+工具 manifest 字段（每个工具 bundle 的 Info.plist + 远程商店 JSON）必须带 `minIOS` / `maxIOS`，工具箱列表里不兼容当前系统的 cell 灰掉 + 标注"需要 iOS X.Y+"，不可点击。
+
+工具 dylib/bundle 必须能跨 arm64 + arm64e fat，rootless 路径自动从 `HelmSystemInfo` 拿，不假设固定 `/var/jb`。
+
 ## Gotchas (we hit these)
 
 - **Filter plist is mandatory.** Theos stage fails with `missing a filter property list` if `HelmTweak.plist` (or `Filter.plist`) is absent. `INSTALL_TARGET_PROCESSES` does NOT replace it — that var only affects the install step.
