@@ -36,8 +36,15 @@
 
 - 版本 `1.0.27`，CI artifact：`HelmTweak-rootless`。
 - 部署工具：`scripts/`（见下方「复现部署」）。
-- **已验证**：MCP server 46 tools、截图/OCR/屏幕信息/UI 树/剪贴板/亮度/音量、Settings 面板（HelmTweak 根 + MCP 子面板 + toggle 按钮）。
+- **已验证**：MCP server 46 tools、截图/OCR/屏幕信息/UI 树/剪贴板/亮度/音量、Settings 面板（HelmTweak 根 + MCP 子面板 + toggle 按钮）、关闭服务后 server 真停。
 - **未验证**：真实 tap/swipe 注入（避免误操作），install_app/uninstall_app（无 IPA 在手）。下次上机可补。
+
+## 自动化 UI 操作经验（MCP 控制 Settings）
+
+- **Settings 列表滚动一次一屏**（约 300 点），**不要连滚到底**——连滚会滑过目标（如 HelmTweak 入口）。逐屏滚 + 每次 OCR/UI 树检查。
+- **OCR 中文识别弱**：中文按钮文案（启动服务/服务开关）常乱码，用 `get_ui_elements` 拿结构化 label 更可靠。
+- **`get_ui_elements` 偶发超时**（AX inactive），重试 2-3 次可恢复。
+- **tap 坐标**：OCR/UI 树返回的 tap 点可直接用；点 cell 时可 +6 点略偏下命中整行。
 
 ## Phase 2c 已完成的 5 个迭代
 
