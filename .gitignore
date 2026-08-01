@@ -4,21 +4,13 @@ token
 token.txt
 .token
 *.deb
-deploy.py
-deploy_*.py
-diag*.py
-debug*.py
-fetch*.py
-prep*.py
-probe*.py
-purge*.py
-read*.py
-verify*.py
 _diag_binary/
 *.log
 
-# 本地部署脚本（含路径逻辑，机器特定配置在 mobile.txt；下次 clone 需要则手动恢复）
-tools/deploy/
+# deploy 工具产物（脚本本身纳入 git，产物不提交）
+tools/deploy/_artifact/
+tools/deploy/_shots/
+tools/deploy/__pycache__/
 
 # Theos 构建产物
 obj/
