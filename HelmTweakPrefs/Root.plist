@@ -28,31 +28,31 @@
 		</dict>
 		<dict>
 			<key>cell</key>
-			<string>PSLinkCell</string>
+			<string>PSStaticTextCell</string>
 			<key>label</key>
-			<string>日志读取器</string>
+			<string>日志读取器 — 读取系统 unified log</string>
 		</dict>
 		<dict>
 			<key>cell</key>
-			<string>PSLinkCell</string>
+			<string>PSStaticTextCell</string>
 			<key>label</key>
-			<string>签名工具</string>
+			<string>签名工具 — 独立 codesign CLI</string>
 		</dict>
 		<dict>
 			<key>cell</key>
-			<string>PSLinkCell</string>
+			<string>PSStaticTextCell</string>
 			<key>label</key>
-			<string>IPA 安装</string>
+			<string>IPA 安装 — 安装未签名 IPA</string>
 		</dict>
 		<dict>
 			<key>cell</key>
-			<string>PSLinkCell</string>
+			<string>PSStaticTextCell</string>
 			<key>label</key>
-			<string>AppSync</string>
+			<string>AppSync — 绕过签名校验</string>
 		</dict>
 		<dict>
 			<key>cell</key>
-			<string>PSLinkCell</string>
+			<string>PSStaticTextCell</string>
 			<key>label</key>
 			<string>Root 命令 — 需要 roothide 环境</string>
 			<key>isEnabled</key>
@@ -60,7 +60,7 @@
 		</dict>
 		<dict>
 			<key>cell</key>
-			<string>PSLinkCell</string>
+			<string>PSStaticTextCell</string>
 			<key>label</key>
 			<string>Root 安装器 — 需要 roothide 环境</string>
 			<key>isEnabled</key>
