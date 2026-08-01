@@ -11,7 +11,7 @@ include $(THEOS)/makefiles/common.mk
 LIBRARY_NAME = HelmCore
 HelmCore_FILES = System/HelmSystemInfo.m System/HelmLogger.m \
                 System/HelmScreenManager.m System/HelmOCRManager.m
-HelmCore_CFLAGS = -fobjc-arc -Wno-unused-variable
+HelmCore_CFLAGS = -fobjc-arc -Wno-unused-variable -Wno-deprecated-declarations
 HelmCore_FRAMEWORKS = Foundation UIKit CoreGraphics QuartzCore Vision
 # 双 scheme 自适应：
 #   roothide -> 链真 <roothide.h>（libroothide）+ -DHELM_CORE_ROOTHIDE=1
