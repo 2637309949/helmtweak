@@ -24,67 +24,47 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>工具箱（按当前系统过滤）</string>
+			<string>工具箱</string>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSLinkCell</string>
-			<key>id</key>
-			<string>tool_mcp-logreader</string>
 			<key>label</key>
 			<string>日志读取器</string>
-			<key>isEnabled</key>
-			<true/>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSLinkCell</string>
-			<key>id</key>
-			<string>tool_mcp-ldid</string>
 			<key>label</key>
 			<string>签名工具</string>
-			<key>isEnabled</key>
-			<true/>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSLinkCell</string>
-			<key>id</key>
-			<string>tool_mcp-appinst</string>
 			<key>label</key>
 			<string>IPA 安装</string>
-			<key>isEnabled</key>
-			<true/>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSLinkCell</string>
-			<key>id</key>
-			<string>tool_mcp-appsync</string>
 			<key>label</key>
 			<string>AppSync</string>
-			<key>isEnabled</key>
-			<true/>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSLinkCell</string>
-			<key>id</key>
-			<string>tool_mcp-root</string>
 			<key>label</key>
-			<string>Root 命令</string>
+			<string>Root 命令 — 需要 roothide 环境</string>
 			<key>isEnabled</key>
-			<true/>
+			<false/>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSLinkCell</string>
-			<key>id</key>
-			<string>tool_mcp-roothelper</string>
 			<key>label</key>
-			<string>Root 安装器</string>
+			<string>Root 安装器 — 需要 roothide 环境</string>
 			<key>isEnabled</key>
-			<true/>
+			<false/>
 		</dict>
 	</array>
 	<key>title</key>
