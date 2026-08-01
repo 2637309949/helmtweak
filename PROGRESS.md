@@ -1,11 +1,19 @@
-# PROGRESS — Phase 3 + Phase 4 全部完成（HelmCore SDK 全量接入）
+# PROGRESS — Phase 3 + Phase 4 全部完成 + 装机验证通过（2026-08-01）
 
 下次打开先看这个 + [CLAUDE.md](CLAUDE.md)，直接接着干。
 
 ## 当前状态 ✅
 
 - **Phase 3 + Phase 4 全部完成**：HelmCore SDK 建立，HelmMCP 所有私有 API 调用全部抽进 HelmCore，CI 全绿。
-- **版本**：`1.0.27`。最新 CI run 30680105948。
+- **装机验证通过（2026-08-01 晚）**：1.0.27 部署到 iPhone XS（`172.20.10.6` root/12345），全功能回归 OK。
+  - ✅ MCP server 46 tools，install_app/uninstall_app 都在
+  - ✅ `get_screen_info` / `screenshot` / `ocr_screen` / `get_ui_elements` / `get_frontmost_app` / `get_device_info` / clipboard / brightness / volume
+  - ✅ Settings 点进 HelmTweak 面板正常（不再闪退，见下方坑）
+  - ✅ MCP 子面板正常，toggleServer 按钮无崩溃
+- **版本**：`1.0.27`。
+- **坑（2026-08-01，两次 Preferences 闪退才定位）**：
+  - `[PSSpecifier preferenceSpecifierNamed:]` / `groupSpecifierWithName:` / `propertyForKey:` 私有构造 → `___forwarding___` → SIGABRT。
+  - 修复：`HelmTweakPrefs.mm` 退化为纯 `loadSpecifiersFromPlistName:`，工具箱灰化改纯静态 plist（`isEnabled=false` + label 标注 roothide-only）。详见 CLAUDE.md gotchas。
 - **Phase 4 完成（2026-08-01）**：
   - `HelmHIDManager`（touch/button 注入）→ SDK，`HelmCore/Private/IOHIDPrivate.h` 承载 IOHID 私有声明。
   - `AppManager` / `AccessibilityManager` / `MCPAX*` 栈 / `MCPUIElement*` / `TextInputManager` / `MCPProcessUtil` 全部 git mv 进 `SDK/HelmCore/System/`。
@@ -24,10 +32,12 @@
 - ClipboardManager / FileSystemManager / LogManager 无私有 API 访问，留在 tools/mcp 即可（低价值不动）。
 - roothide 本地 build 验证（CI 只 build rootless）：`make clean && make package THEOS_PACKAGE_SCHEME=roothide`。
 
-## 装机验证
+## 装机验证（2026-08-01 完成）
 
 - 版本 `1.0.27`，CI artifact：`HelmTweak-rootless`。
-- 验证点：prefs 工具箱列表（含 minIOS/scheme 灰掉）、MCP server 46 tools、截图/OCR/触摸/文本输入、install_app/uninstall_app。
+- 部署工具：`tools/deploy/`（见下方「复现部署」）。
+- **已验证**：MCP server 46 tools、截图/OCR/屏幕信息/UI 树/剪贴板/亮度/音量、Settings 面板（HelmTweak 根 + MCP 子面板 + toggle 按钮）。
+- **未验证**：真实 tap/swipe 注入（避免误操作），install_app/uninstall_app（无 IPA 在手）。下次上机可补。
 
 ## Phase 2c 已完成的 5 个迭代
 
