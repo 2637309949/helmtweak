@@ -125,7 +125,7 @@ static NSString *MCPAXNodePipelineProbeTruncatedDescription(id value) {
         description = nil;
     }
     if (description.length > 240) {
-        return [[description substringToIndex:240] stringByAppendingString:@"�?];
+        return [[description substringToIndex:240] stringByAppendingString:@"…"];
     }
     return description;
 }
@@ -149,7 +149,7 @@ static NSDictionary *MCPAXNodePipelineProbeValueSummary(id value) {
         summary[@"type"] = @"string";
         summary[@"length"] = @(stringValue.length);
         summary[@"value"] = stringValue.length > 240 ?
-            [[stringValue substringToIndex:240] stringByAppendingString:@"�?] :
+            [[stringValue substringToIndex:240] stringByAppendingString:@"…"] :
             stringValue;
         return summary;
     }
