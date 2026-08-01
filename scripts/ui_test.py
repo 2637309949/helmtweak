@@ -63,7 +63,10 @@ def ocr_items():
 
 def ui_items():
     for _ in range(3):
-        r = tool("get_ui_elements", {"maxElements": 80}, timeout=30)
+        try:
+            r = tool("get_ui_elements", {"maxElements": 80}, timeout=30)
+        except Exception:
+            r = None
         if r:
             try:
                 j = json.loads(text(r))
@@ -98,9 +101,11 @@ def swipe(x1, y1, x2, y2, dur=200):
 
 
 def find_text(target, max_pages=10, scroll_down=True):
-    """逐屏滚动找文本。scroll_down=True 从当前往下滚(看到列表下面)，False 往上滚。"""
+    """逐屏滚动找文本。UI 树优先，OCR 兜底。scroll_down=True 从当前往下滚(看到列表下面)，False 往上滚。"""
     for i in range(max_pages):
         items = ui_items()
+        if not items:
+            items = ocr_items()
         for t, tap in items:
             if target in t:
                 return t, tap, i
