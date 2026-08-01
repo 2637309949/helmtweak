@@ -120,6 +120,26 @@
     CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
 }
 
+// 读 Tweak.x 写入的真实运行状态（serverRunning）。probe 在 Settings 沙箱里
+// 连 127.0.0.1 可能失败（上滑退出 Settings 再进会重新 probe），
+// 所以以 prefs 状态为准，probe 只作辅助。
+- (BOOL)serverRunningPref {
+    BOOL running = NO;
+    CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("serverRunning"),
+                                                     CFSTR("com.witchan.ios-mcp.preferences"));
+    if (v) {
+        if (CFGetTypeID(v) == CFBooleanGetTypeID()) {
+            running = CFBooleanGetValue((CFBooleanRef)v);
+        } else if (CFGetTypeID(v) == CFNumberGetTypeID()) {
+            int n = 0;
+            CFNumberGetValue((CFNumberRef)v, kCFNumberIntType, &n);
+            running = n != 0;
+        }
+        CFRelease(v);
+    }
+    return running;
+}
+
 - (void)refreshServerStatus {
     PSSpecifier *buttonSpec = [self specifierForID:@"mcpToggleButton"];
     if (buttonSpec) {
@@ -131,10 +151,12 @@
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         __strong typeof(weakSelf) self = weakSelf;
         if (!self) return;
-        BOOL isUp = [self probeMCPServerOnPort:[self configuredPort]];
 
-        // 同步 pref 跟实际状态走
-        [self writeEnabledPref:isUp];
+        // 真实状态：先看 serverRunning pref（Tweak.x 维护），probe 通了再覆盖。
+        BOOL isUp = [self serverRunningPref];
+        BOOL probeUp = [self probeMCPServerOnPort:[self configuredPort]];
+        if (probeUp) isUp = YES;   // probe 通了必为运行中
+        // probe 失败不覆盖 pref 的 running 状态
 
         dispatch_async(dispatch_get_main_queue(), ^{
             __strong typeof(weakSelf) self = weakSelf;
@@ -172,7 +194,8 @@
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         __strong typeof(weakSelf) self = weakSelf;
         if (!self) return;
-        BOOL isUp = [self probeMCPServerOnPort:[self configuredPort]];
+        BOOL isUp = [self serverRunningPref];
+        if ([self probeMCPServerOnPort:[self configuredPort]]) isUp = YES;
 
         dispatch_async(dispatch_get_main_queue(), ^{
             __strong typeof(weakSelf) self = weakSelf;

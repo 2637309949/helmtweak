@@ -40,6 +40,14 @@ static void ios_mcp_write_enabled_preference(BOOL enabled) {
     CFPreferencesAppSynchronize((__bridge CFStringRef)IOS_MCP_PREFERENCES_DOMAIN);
 }
 
+// 真实运行状态写入 prefs，供 Settings 面板读取（probe 在 Settings 沙箱里连 127.0.0.1 可能失败）。
+static void ios_mcp_write_server_running_preference(BOOL running) {
+    CFPreferencesSetAppValue(CFSTR("serverRunning"),
+                             running ? kCFBooleanTrue : kCFBooleanFalse,
+                             (__bridge CFStringRef)IOS_MCP_PREFERENCES_DOMAIN);
+    CFPreferencesAppSynchronize((__bridge CFStringRef)IOS_MCP_PREFERENCES_DOMAIN);
+}
+
 static BOOL ios_mcp_is_springboard_process(void) {
     NSString *processName = [[NSProcessInfo processInfo] processName];
     if ([processName isEqualToString:@"SpringBoard"]) {
@@ -53,11 +61,13 @@ static BOOL ios_mcp_is_springboard_process(void) {
 static uint16_t ios_mcp_start_server(void) {
     uint16_t port = IOSMCPConfiguredPort();
     [[MCPServer sharedInstance] startOnPort:port];
+    ios_mcp_write_server_running_preference([[MCPServer sharedInstance] isRunning]);
     return port;
 }
 
 static void ios_mcp_stop_server(void) {
     [[MCPServer sharedInstance] stop];
+    ios_mcp_write_server_running_preference(NO);
 }
 
 static void ios_mcp_handle_control_notification(CFNotificationCenterRef center,
@@ -106,6 +116,7 @@ static void ios_mcp_autostart_if_needed(NSString *reason) {
                 reason ?: @"unknown",
                 (unsigned int)port);
     [[MCPServer sharedInstance] startOnPort:port];
+    ios_mcp_write_server_running_preference(server.isRunning);
 
     if (!server.isRunning) {
         IOS_MCP_LOG(@"Auto-start attempt (%@) did not start server; later retry may recover",
