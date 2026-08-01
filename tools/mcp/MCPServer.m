@@ -723,6 +723,8 @@ static NSDictionary *MCPElementSummary(NSDictionary *element) {
     dispatch_queue_t _clientQueue;
     NSString *_sessionId;
     NSString *_negotiatedProtocolVersion;
+    BOOL _keepAlive;
+    BOOL _sseRequested;
 }
 
 + (instancetype)sharedInstance {
@@ -929,16 +931,31 @@ static HelmMCPPortState HelmMCPProbePort(uint16_t port) {
 
 #pragma mark - HTTP Handling
 
+// keep-alive 循环：复用同一 TCP 连接处理多个 HTTP 请求，直到客户端要求
+// Connection: close 或读超时（空闲 8s）断开。MCP Streamable HTTP 标准行为。
 - (void)handleClient:(int)clientSocket {
+    while (1) {
+        BOOL keepAlive = [self handleClientOnce:clientSocket];
+        if (!keepAlive) {
+            close(clientSocket);
+            break;
+        }
+        // 继续循环，下一轮从同一 socket 读下一个请求头
+    }
+}
+
+- (BOOL)handleClientOnce:(int)clientSocket {
     NSDate *requestStart = [NSDate date];
     NSString *requestLogId = MCPNextLogRequestId();
 
-    // Set read timeout
-    struct timeval tv = { .tv_sec = 10, .tv_usec = 0 };
+    // Set read timeout (short enough that a keep-alive idle connection is dropped promptly)
+    struct timeval tv = { .tv_sec = 8, .tv_usec = 0 };
     setsockopt(clientSocket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
+    _keepAlive = NO;
+
     char *buffer = malloc(HTTP_BUF_SIZE);
-    if (!buffer) { close(clientSocket); return; }
+    if (!buffer) { close(clientSocket); return NO; }
 
     ssize_t totalRead = 0;
     ssize_t headerEnd = -1;
@@ -966,7 +983,7 @@ static HelmMCPPortState HelmMCPProbePort(uint16_t port) {
         [self sendErrorResponse:clientSocket status:400 message:@"Bad Request" requestLogId:requestLogId];
         free(buffer);
         close(clientSocket);
-        return;
+        return NO;
     }
 
     // Parse request line and headers
@@ -1002,6 +1019,12 @@ static HelmMCPPortState HelmMCPProbePort(uint16_t port) {
     BOOL chunkedBody = [transferEncoding containsString:@"chunked"];
     NSString *protocolVersionHeader = headers[@"mcp-protocol-version"];
 
+    // keep-alive: 客户端没显式要求 Connection: close 就复用连接。
+    NSString *connHeader = [headers[@"connection"] lowercaseString] ?: @"";
+    _keepAlive = ![connHeader containsString:@"close"];
+    NSString *acceptHeader = [headers[@"accept"] lowercaseString] ?: @"";
+    _sseRequested = [acceptHeader containsString:@"text/event-stream"];
+
     ssize_t bodyReceived = totalRead - headerEnd;
     NSString *basePath = MCPBasePath(path);
     BOOL suppressSuccessfulHealthLog = [method isEqualToString:@"GET"] && [basePath isEqualToString:@"/health"];
@@ -1025,7 +1048,7 @@ static HelmMCPPortState HelmMCPProbePort(uint16_t port) {
                         requestLogId:requestLogId];
             free(buffer);
             close(clientSocket);
-            return;
+            return NO;
         }
         [self setNegotiatedProtocolVersion:protocolVersionHeader];
     }
@@ -1050,13 +1073,13 @@ static HelmMCPPortState HelmMCPProbePort(uint16_t port) {
                 [self sendErrorResponse:clientSocket status:errorStatus message:errorMessage ?: @"Invalid chunked MCP request body" requestLogId:requestLogId];
                 free(buffer);
                 close(clientSocket);
-                return;
+                return NO;
             }
 
             [self handleMCPRequest:bodyData clientSocket:clientSocket requestLogId:requestLogId];
             free(buffer);
             close(clientSocket);
-            return;
+            return NO;
         }
 
         if (contentLength < 0) contentLength = 0;
@@ -1064,7 +1087,7 @@ static HelmMCPPortState HelmMCPProbePort(uint16_t port) {
             [self sendErrorResponse:clientSocket status:413 message:@"MCP request body too large" requestLogId:requestLogId];
             free(buffer);
             close(clientSocket);
-            return;
+            return NO;
         }
 
         while (bodyReceived < contentLength && totalRead < HTTP_BUF_SIZE - 1) {
@@ -1079,7 +1102,7 @@ static HelmMCPPortState HelmMCPProbePort(uint16_t port) {
             [self sendErrorResponse:clientSocket status:400 message:@"Incomplete MCP request body" requestLogId:requestLogId];
             free(buffer);
             close(clientSocket);
-            return;
+            return NO;
         }
 
         NSData *bodyData = [NSData dataWithBytes:buffer + headerEnd length:MIN(bodyReceived, contentLength)];
@@ -1115,7 +1138,7 @@ static HelmMCPPortState HelmMCPProbePort(uint16_t port) {
     }
 
     free(buffer);
-    close(clientSocket);
+    return _keepAlive;
 }
 
 - (NSData *)readChunkedMCPBodyFromSocket:(int)clientSocket
@@ -4216,25 +4239,56 @@ static BOOL MCPSetSystemBrightness(CGFloat brightness) {
         return;
     }
 
+    // SSE (Streamable HTTP) 请求走 text/event-stream 帧。
+    if (_sseRequested) {
+        NSString *eventData = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+        NSString *payload = [NSString stringWithFormat:@"event: message\ndata: %@\n\n", eventData];
+        NSData *payloadData = [payload dataUsingEncoding:NSUTF8StringEncoding];
+
+        NSString *response = [NSString stringWithFormat:
+            @"HTTP/1.1 %d OK\r\n"
+            @"Content-Type: text/event-stream\r\n"
+            @"Cache-Control: no-cache\r\n"
+            @"Mcp-Session-Id: %@\r\n"
+            @"MCP-Protocol-Version: %@\r\n"
+            @"Connection: %@\r\n"
+            @"\r\n",
+            status, _sessionId, [self negotiatedProtocolVersion], _keepAlive ? @"keep-alive" : @"close"];
+
+        NSMutableData *responseData = [NSMutableData dataWithData:[response dataUsingEncoding:NSUTF8StringEncoding]];
+        [responseData appendData:payloadData];
+
+        if (requestLogId.length > 0) {
+            [MCPLogger log:@"http_response req=%@ sock=%d status=%d contentType=text/event-stream bytes=%lu sse=yes",
+             requestLogId,
+             socket,
+             status,
+             (unsigned long)responseData.length];
+        }
+        [self writeAll:socket data:responseData requestLogId:requestLogId];
+        return;
+    }
+
     NSString *response = [NSString stringWithFormat:
         @"HTTP/1.1 %d OK\r\n"
         @"Content-Type: application/json\r\n"
         @"Content-Length: %lu\r\n"
         @"Mcp-Session-Id: %@\r\n"
         @"MCP-Protocol-Version: %@\r\n"
-        @"Connection: close\r\n"
+        @"Connection: %@\r\n"
         @"\r\n",
-        status, (unsigned long)jsonData.length, _sessionId, [self negotiatedProtocolVersion]];
+        status, (unsigned long)jsonData.length, _sessionId, [self negotiatedProtocolVersion], _keepAlive ? @"keep-alive" : @"close"];
 
     NSMutableData *responseData = [NSMutableData dataWithData:[response dataUsingEncoding:NSUTF8StringEncoding]];
     [responseData appendData:jsonData];
 
     if (requestLogId.length > 0) {
-        [MCPLogger log:@"http_response req=%@ sock=%d status=%d contentType=application/json bytes=%lu",
+        [MCPLogger log:@"http_response req=%@ sock=%d status=%d contentType=application/json bytes=%lu keepAlive=%d",
          requestLogId,
          socket,
          status,
-         (unsigned long)responseData.length];
+         (unsigned long)responseData.length,
+         _keepAlive ? 1 : 0];
     }
     [self writeAll:socket data:responseData requestLogId:requestLogId];
 }
@@ -4260,9 +4314,9 @@ static BOOL MCPSetSystemBrightness(CGFloat brightness) {
         @"Content-Type: application/json\r\n"
         @"Content-Length: %lu\r\n"
         @"MCP-Protocol-Version: %@\r\n"
-        @"Connection: close\r\n"
+        @"Connection: %@\r\n"
         @"\r\n",
-        status, statusText, (unsigned long)jsonData.length, [self negotiatedProtocolVersion]];
+        status, statusText, (unsigned long)jsonData.length, [self negotiatedProtocolVersion], _keepAlive ? @"keep-alive" : @"close"];
 
     NSMutableData *responseData = [NSMutableData dataWithData:[header dataUsingEncoding:NSUTF8StringEncoding]];
     [responseData appendData:jsonData];
@@ -4288,9 +4342,9 @@ static BOOL MCPSetSystemBrightness(CGFloat brightness) {
         @"Content-Length: %lu\r\n"
         @"Allow: %@\r\n"
         @"MCP-Protocol-Version: %@\r\n"
-        @"Connection: close\r\n"
+        @"Connection: %@\r\n"
         @"\r\n",
-        (unsigned long)jsonData.length, allowedMethods ?: @"POST", [self negotiatedProtocolVersion]];
+        (unsigned long)jsonData.length, allowedMethods ?: @"POST", [self negotiatedProtocolVersion], _keepAlive ? @"keep-alive" : @"close"];
 
     NSMutableData *responseData = [NSMutableData dataWithData:[header dataUsingEncoding:NSUTF8StringEncoding]];
     [responseData appendData:jsonData];
@@ -4311,9 +4365,9 @@ static BOOL MCPSetSystemBrightness(CGFloat brightness) {
         @"Content-Length: 0\r\n"
         @"Mcp-Session-Id: %@\r\n"
         @"MCP-Protocol-Version: %@\r\n"
-        @"Connection: close\r\n"
+        @"Connection: %@\r\n"
         @"\r\n",
-        status, _sessionId, [self negotiatedProtocolVersion]];
+        status, _sessionId, [self negotiatedProtocolVersion], _keepAlive ? @"keep-alive" : @"close"];
 
     NSData *data = [response dataUsingEncoding:NSUTF8StringEncoding];
     if (requestLogId.length > 0) {
