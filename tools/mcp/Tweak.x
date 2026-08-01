@@ -16,10 +16,10 @@ static BOOL ios_mcp_enabled_preference(void) {
     CFPropertyListRef value = CFPreferencesCopyAppValue((__bridge CFStringRef)IOS_MCP_ENABLED_PREFERENCE_KEY,
                                                         (__bridge CFStringRef)IOS_MCP_PREFERENCES_DOMAIN);
     if (!value) {
-        return YES;
+        return NO;
     }
 
-    BOOL enabled = YES;
+    BOOL enabled = NO;
     CFTypeID typeID = CFGetTypeID(value);
     if (typeID == CFBooleanGetTypeID()) {
         enabled = CFBooleanGetValue((CFBooleanRef)value);
