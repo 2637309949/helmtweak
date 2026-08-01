@@ -1,5 +1,6 @@
 # 凭据/本地机密 —— 绝不提交
 *.txt
+!layout/usr/share/helmtweak/usage_guide.txt
 token
 token.txt
 .token
