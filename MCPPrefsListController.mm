@@ -13,6 +13,8 @@
 #import <sys/socket.h>
 #import <netinet/in.h>
 #import <arpa/inet.h>
+#import <ifaddrs.h>
+#import <net/if.h>
 
 @interface PSListController (HelmTweakPrivate)
 - (NSMutableArray *)loadSpecifiersFromPlistName:(NSString *)name target:(id)target;
@@ -59,15 +61,13 @@
     return port;
 }
 
-- (BOOL)probeMCPServerOnPort:(uint16_t)port {
-    // 用 BSD socket 直接测 TCP 连接，不经过 NSURLSession/ATS。
-    // NSURLSession 在 Settings 进程里对 http://127.0.0.1 可能被 ATS 拦，导致误判 server 没起。
+- (BOOL)probeAddress:(NSString *)ip port:(uint16_t)port {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) return NO;
 
     struct timeval tv;
     tv.tv_sec = 0;
-    tv.tv_usec = 500 * 1000;
+    tv.tv_usec = 400 * 1000;
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
@@ -75,11 +75,42 @@
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
-    inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+    inet_pton(AF_INET, ip.UTF8String, &addr.sin_addr);
 
     int rc = connect(fd, (struct sockaddr *)&addr, sizeof(addr));
     close(fd);
     return rc == 0;
+}
+
+// 取设备当前局域网 IPv4 地址（Settings 进程内获取，用于兜底 probe）。
+- (NSString *)currentLANIPv4Address {
+    struct ifaddrs *interfaces = NULL;
+    NSString *address = nil;
+    if (getifaddrs(&interfaces) == 0) {
+        for (struct ifaddrs *ifa = interfaces; ifa; ifa = ifa->ifa_next) {
+            if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET) continue;
+            if (!(ifa->ifa_flags & IFF_UP) || (ifa->ifa_flags & IFF_LOOPBACK)) continue;
+            char buf[INET_ADDRSTRLEN];
+            struct sockaddr_in *sin = (struct sockaddr_in *)ifa->ifa_addr;
+            if (!inet_ntop(AF_INET, &sin->sin_addr, buf, sizeof(buf))) continue;
+            NSString *iface = ifa->ifa_name ? [NSString stringWithUTF8String:ifa->ifa_name] : @"";
+            if ([iface isEqualToString:@"en0"]) {
+                address = [NSString stringWithUTF8String:buf];
+                break;
+            }
+            if (!address) address = [NSString stringWithUTF8String:buf];
+        }
+    }
+    if (interfaces) freeifaddrs(interfaces);
+    return address;
+}
+
+- (BOOL)probeMCPServerOnPort:(uint16_t)port {
+    // 先试 loopback，再试局域网 IP（Settings 沙箱可能拦 loopback，但允许局域网连接）。
+    if ([self probeAddress:@"127.0.0.1" port:port]) return YES;
+    NSString *lanIP = [self currentLANIPv4Address];
+    if (lanIP.length > 0 && [self probeAddress:lanIP port:port]) return YES;
+    return NO;
 }
 
 - (void)writeEnabledPref:(BOOL)on {
@@ -90,6 +121,12 @@
 }
 
 - (void)refreshServerStatus {
+    PSSpecifier *buttonSpec = [self specifierForID:@"mcpToggleButton"];
+    if (buttonSpec) {
+        [buttonSpec setName:@"检测中..."];
+        [self reload];
+    }
+
     __weak typeof(self) weakSelf = self;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         __strong typeof(weakSelf) self = weakSelf;
