@@ -43,11 +43,13 @@ include $(THEOS_MAKE_PATH)/tweak.mk
 # ===== PreferenceBundle: Settings.app 入口，显示 hello =====
 BUNDLE_NAME = HelmTweakPrefs
 HelmTweakPrefs_FILES = HelmTweakPrefs.mm MCPPrefsListController.mm
-HelmTweakPrefs_CFLAGS = -fobjc-arc -Wno-unused-variable
+HelmTweakPrefs_CFLAGS = -fobjc-arc -Wno-unused-variable -I$(THEOS_PROJECT_DIR)/SDK
 HelmTweakPrefs_FRAMEWORKS = UIKit Preferences
 HelmTweakPrefs_PRIVATE_FRAMEWORKS = Preferences
 HelmTweakPrefs_INSTALL_PATH = /Library/PreferenceBundles
 HelmTweakPrefs_RESOURCE_DIRS = HelmTweakPrefs
+# 链接 HelmCore SDK dylib（工具箱列表用 HelmSystemInfo 查 iOS 版本 / scheme）
+HelmTweakPrefs_LDFLAGS = $(THEOS_PROJECT_DIR)/SDK/HelmCore/.theos/obj/HelmCore.dylib
 include $(THEOS_MAKE_PATH)/bundle.mk
 
 # ===== Bundle CLI helpers into deb staging dir =====
