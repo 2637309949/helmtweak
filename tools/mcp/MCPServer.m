@@ -725,7 +725,6 @@ static NSDictionary *MCPElementSummary(NSDictionary *element) {
     NSString *_negotiatedProtocolVersion;
     BOOL _keepAlive;
     BOOL _sseRequested;
-    dispatch_source_t _heartbeatSource;
 }
 
 + (instancetype)sharedInstance {
@@ -929,49 +928,28 @@ static void MCPServerSetStatus(NSString *status) {
     });
 
     dispatch_resume(_acceptSource);
-    [self startHeartbeat];
     MCPServerSetStatus(@"started");
+    // 通知 Settings：启动完成。
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                        IOS_MCP_DARWIN_NOTIFICATION_STARTED,
+                                        NULL, NULL, true);
     MCP_LOG(@"MCP server started on port %d", port);
-}
-
-// 心跳：每 1s 写 serverHeartbeat 时间戳到 prefs，供 Settings 面板判断 server 真实存活。
-// Settings 沙箱连 127.0.0.1 probe 不可靠，用时间戳心跳最准。
-- (void)startHeartbeat {
-    if (_heartbeatSource) return;
-    _heartbeatSource = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
-                                              dispatch_get_global_queue(QOS_CLASS_UTILITY, 0));
-    dispatch_source_set_timer(_heartbeatSource, dispatch_walltime(NULL, 0),
-                              1.0 * NSEC_PER_SEC, 0.5 * NSEC_PER_SEC);
-    __weak typeof(self) weakSelf = self;
-    dispatch_source_set_event_handler(_heartbeatSource, ^{
-        __strong typeof(weakSelf) self = weakSelf;
-        if (!self) return;
-        CFPreferencesSetAppValue(CFSTR("serverHeartbeat"),
-                                 (__bridge CFNumberRef)@(CFAbsoluteTimeGetCurrent()),
-                                 CFSTR("com.witchan.ios-mcp.preferences"));
-        CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
-    });
-    dispatch_resume(_heartbeatSource);
-}
-
-- (void)stopHeartbeat {
-    if (_heartbeatSource) {
-        dispatch_source_cancel(_heartbeatSource);
-        _heartbeatSource = nil;
-    }
 }
 
 - (void)stop {
     if (!_running) return;
     MCPServerSetStatus(@"stopping");
     _running = NO;
-    [self stopHeartbeat];
     if (_acceptSource) {
         dispatch_source_cancel(_acceptSource);
         _acceptSource = nil;
     }
     _serverSocket = -1;
     MCPServerSetStatus(@"stopped");
+    // 通知 Settings：停止完成。
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                        IOS_MCP_DARWIN_NOTIFICATION_STOPPED,
+                                        NULL, NULL, true);
     MCP_LOG(@"MCP server stopped");
 }
 

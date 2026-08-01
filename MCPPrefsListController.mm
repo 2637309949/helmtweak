@@ -1,9 +1,10 @@
 // MCPPrefsListController — MCP 工具子面板
 //
-// 进面板时 probe :8686/mcp 实际状态：
-//   - server 起来了 -> label = "关闭服务"，pref enabled = True
-//   - server 没起 -> label = "启动服务"，pref enabled = False
-// 重启手机后 autostart 失败的话，进面板会显示 server 实际没起，不会误显示开。
+// 事件驱动状态：状态以 MCP 服务为准。
+//   - 点击启动/关闭 -> 立即变"启动中/关闭中"不可点，发 darwin 事件给 MCP
+//   - MCP 完成 -> 回 STARTED/STOPPED 事件，这里收到即更新按钮
+//   - 3s 无回执 -> 发 CHECK 事件让 MCP 传回最新状态（应对启动中被打断）
+//   - 进面板时读 serverStatus，中间态则发 CHECK
 //
 // PSButtonCell title 刷新用 [spec setName:] + [self reload]。
 // setProperty:forKey:@"label" + reloadSpecifier:animated: 在 iOS 15+ 不重画 title（1.0.17/1.0.18 已确认）。
@@ -11,11 +12,7 @@
 #import <Preferences/Preferences.h>
 #import <UIKit/UIKit.h>
 #import <CoreFoundation/CoreFoundation.h>
-#import <sys/socket.h>
-#import <netinet/in.h>
-#import <arpa/inet.h>
-#import <ifaddrs.h>
-#import <net/if.h>
+#import "IOSMCPPreferences.h"
 
 @interface PSListController (HelmTweakPrivate)
 - (NSMutableArray *)loadSpecifiersFromPlistName:(NSString *)name target:(id)target;
@@ -28,6 +25,8 @@
 
 @interface MCPPrefsListController : PSListController
 @property (nonatomic, assign) BOOL serverRunning;
+@property (nonatomic, assign) BOOL waitingForStart;
+@property (nonatomic, assign) BOOL waitingForStop;
 @end
 
 @implementation MCPPrefsListController
@@ -41,77 +40,83 @@
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
+    [self registerControlObservers];
     [self refreshServerStatus];
 }
 
-#pragma mark - Port + probe
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
+    [self unregisterControlObservers];
+}
 
-- (uint16_t)configuredPort {
-    uint16_t port = 8686;
-    CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("port"),
-                                                     CFSTR("com.witchan.ios-mcp.preferences"));
-    if (v) {
-        if (CFGetTypeID(v) == CFNumberGetTypeID()) {
-            port = (uint16_t)[(__bridge NSNumber *)v unsignedShortValue];
-        } else if (CFGetTypeID(v) == CFStringGetTypeID()) {
-            port = (uint16_t)[(__bridge NSString *)v integerValue];
-        }
-        CFRelease(v);
+#pragma mark - Darwin event observers
+
+- (void)registerControlObservers {
+    CFNotificationCenterRef center = CFNotificationCenterGetDarwinNotifyCenter();
+    CFNotificationCenterAddObserver(center,
+                                    (__bridge const void *)self,
+                                    &MCPServerControlCallback,
+                                    IOS_MCP_DARWIN_NOTIFICATION_STARTED,
+                                    NULL,
+                                    CFNotificationSuspensionBehaviorDeliverImmediately);
+    CFNotificationCenterAddObserver(center,
+                                    (__bridge const void *)self,
+                                    &MCPServerControlCallback,
+                                    IOS_MCP_DARWIN_NOTIFICATION_STOPPED,
+                                    NULL,
+                                    CFNotificationSuspensionBehaviorDeliverImmediately);
+}
+
+- (void)unregisterControlObservers {
+    CFNotificationCenterRef center = CFNotificationCenterGetDarwinNotifyCenter();
+    CFNotificationCenterRemoveObserver(center, (__bridge const void *)self,
+                                       IOS_MCP_DARWIN_NOTIFICATION_STARTED, NULL);
+    CFNotificationCenterRemoveObserver(center, (__bridge const void *)self,
+                                       IOS_MCP_DARWIN_NOTIFICATION_STOPPED, NULL);
+}
+
+static void MCPServerControlCallback(CFNotificationCenterRef center,
+                                     void *observer,
+                                     CFStringRef name,
+                                     const void *object,
+                                     CFDictionaryRef userInfo) {
+    MCPPrefsListController *controller = (__bridge MCPPrefsListController *)observer;
+    if (!name || !controller) return;
+    if (CFEqual(name, IOS_MCP_DARWIN_NOTIFICATION_STARTED)) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [controller handleServerEventStarted];
+        });
+    } else if (CFEqual(name, IOS_MCP_DARWIN_NOTIFICATION_STOPPED)) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [controller handleServerEventStopped];
+        });
     }
-    if (port == 0) port = 8686;
-    return port;
 }
 
-- (BOOL)probeAddress:(NSString *)ip port:(uint16_t)port {
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) return NO;
-
-    struct timeval tv;
-    tv.tv_sec = 0;
-    tv.tv_usec = 400 * 1000;
-    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    inet_pton(AF_INET, ip.UTF8String, &addr.sin_addr);
-
-    int rc = connect(fd, (struct sockaddr *)&addr, sizeof(addr));
-    close(fd);
-    return rc == 0;
-}
-
-// 取设备当前局域网 IPv4 地址（Settings 进程内获取，用于兜底 probe）。
-- (NSString *)currentLANIPv4Address {
-    struct ifaddrs *interfaces = NULL;
-    NSString *address = nil;
-    if (getifaddrs(&interfaces) == 0) {
-        for (struct ifaddrs *ifa = interfaces; ifa; ifa = ifa->ifa_next) {
-            if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET) continue;
-            if (!(ifa->ifa_flags & IFF_UP) || (ifa->ifa_flags & IFF_LOOPBACK)) continue;
-            char buf[INET_ADDRSTRLEN];
-            struct sockaddr_in *sin = (struct sockaddr_in *)ifa->ifa_addr;
-            if (!inet_ntop(AF_INET, &sin->sin_addr, buf, sizeof(buf))) continue;
-            NSString *iface = ifa->ifa_name ? [NSString stringWithUTF8String:ifa->ifa_name] : @"";
-            if ([iface isEqualToString:@"en0"]) {
-                address = [NSString stringWithUTF8String:buf];
-                break;
-            }
-            if (!address) address = [NSString stringWithUTF8String:buf];
-        }
+- (void)handleServerEventStarted {
+    self.waitingForStart = NO;
+    self.waitingForStop = NO;
+    self.serverRunning = YES;
+    [self writeEnabledPref:YES];
+    [self setButtonLoading:NO];
+    PSSpecifier *s = [self specifierForID:@"mcpToggleButton"];
+    if (s) {
+        [s setName:@"关闭服务"];
+        [self reload];
     }
-    if (interfaces) freeifaddrs(interfaces);
-    return address;
 }
 
-- (BOOL)probeMCPServerOnPort:(uint16_t)port {
-    // 先试 loopback，再试局域网 IP（Settings 沙箱可能拦 loopback，但允许局域网连接）。
-    if ([self probeAddress:@"127.0.0.1" port:port]) return YES;
-    NSString *lanIP = [self currentLANIPv4Address];
-    if (lanIP.length > 0 && [self probeAddress:lanIP port:port]) return YES;
-    return NO;
+- (void)handleServerEventStopped {
+    self.waitingForStart = NO;
+    self.waitingForStop = NO;
+    self.serverRunning = NO;
+    [self writeEnabledPref:NO];
+    [self setButtonLoading:NO];
+    PSSpecifier *s = [self specifierForID:@"mcpToggleButton"];
+    if (s) {
+        [s setName:@"启动服务"];
+        [self reload];
+    }
 }
 
 - (void)writeEnabledPref:(BOOL)on {
@@ -133,30 +138,11 @@
     return status;
 }
 
-// 心跳判断：server 每 1s 写 serverHeartbeat 时间戳，>3s 未更新 = 死。
-// 这是最可靠的真实存活判断（Settings 沙箱连 127.0.0.1 不可靠）。
-- (BOOL)serverRunningByHeartbeat {
-    CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("serverHeartbeat"),
-                                                     CFSTR("com.witchan.ios-mcp.preferences"));
-    if (!v) return NO;
-    double ts = 0;
-    if (CFGetTypeID(v) == CFNumberGetTypeID()) {
-        CFNumberGetValue((CFNumberRef)v, kCFNumberDoubleType, &ts);
-    } else if (CFGetTypeID(v) == CFStringGetTypeID()) {
-        ts = [(__bridge NSString *)v doubleValue];
-    }
-    CFRelease(v);
-    if (ts <= 0) return NO;
-    return (CFAbsoluteTimeGetCurrent() - ts) <= 3.0;
-}
-
-// 综合判断真实运行状态：status=started 且心跳新鲜 = 在跑。
+// 综合判断真实运行状态：status=started = 在跑。
+// 以 MCP 服务维护的状态为准（Settings 不探测，靠事件+状态变量）。
 - (BOOL)serverRunningByStatus {
     NSString *status = [self serverStatusString];
-    if ([status isEqualToString:@"started"]) {
-        return [self serverRunningByHeartbeat];
-    }
-    return NO;
+    return [status isEqualToString:@"started"];
 }
 
 // 给 mcpToggleButton 的 cell 加/去转圈 spinner（模拟系统开关等待态）。
@@ -179,112 +165,86 @@
 }
 
 - (void)refreshServerStatus {
-    PSSpecifier *buttonSpec = [self specifierForID:@"mcpToggleButton"];
-    if (buttonSpec) {
-        [buttonSpec setName:@"检测中..."];
-        [self reload];
+    // 进面板：读 serverStatus。
+    //   中间态（starting/stopping）-> 发 CHECK 等 MCP 回执（事件驱动兜底）
+    //   started -> "关闭服务"；stopped -> "启动服务"
+    NSString *status = [self serverStatusString];
+    BOOL isUp = [self serverRunningByStatus];
+
+    if ([status isEqualToString:@"starting"] || [status isEqualToString:@"stopping"]) {
+        // 上次处于中间态（可能被打断），主动 CHECK 让 MCP 传回最新状态。
+        self.waitingForStart = NO;
+        self.waitingForStop = NO;
+        [self setButtonLoading:YES];
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                            IOS_MCP_DARWIN_NOTIFICATION_CHECK,
+                                            NULL, NULL, true);
+        [self scheduleStatusTimeout];
+        return;
     }
 
+    self.serverRunning = isUp;
+    [self setButtonLoading:NO];
+    PSSpecifier *s = [self specifierForID:@"mcpToggleButton"];
+    if (s) {
+        [s setName:isUp ? @"关闭服务" : @"启动服务"];
+        [self reload];
+    }
+}
+
+// 3s 兜底定时器：等待事件回执期间超时后，发 CHECK 确认最新状态。
+- (void)scheduleStatusTimeout {
     __weak typeof(self) weakSelf = self;
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
         __strong typeof(weakSelf) self = weakSelf;
         if (!self) return;
-
-        // 真实状态：状态机+心跳为准，probe 通了再覆盖为 YES。
-        BOOL isUp = [self serverRunningByStatus];
-        BOOL probeUp = [self probeMCPServerOnPort:[self configuredPort]];
-        if (probeUp) isUp = YES;   // probe 通了必为运行中
-        // probe 失败不影响状态机判断
-
-        dispatch_async(dispatch_get_main_queue(), ^{
-            __strong typeof(weakSelf) self = weakSelf;
-            if (!self) return;
-            self.serverRunning = isUp;
-            [self setButtonLoading:NO];
-            PSSpecifier *s = [self specifierForID:@"mcpToggleButton"];
-            if (s) {
-                [s setName:isUp ? @"关闭服务" : @"启动服务"];
-                [self reload];
-            }
-        });
+        // 若还在等待（事件没回来），发 CHECK 刷新。
+        if (self.waitingForStart || self.waitingForStop) {
+            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                                IOS_MCP_DARWIN_NOTIFICATION_CHECK,
+                                                NULL, NULL, true);
+        }
     });
 }
 
 - (void)toggleServer:(PSSpecifier *)spec {
-    // 期望方向由点击时按钮 label 决定：
-    //   "启动服务" -> 期望启动；"关闭服务" -> 期望关闭。
-    // 点击后先"检测中..."，探测实际状态，与期望方向对齐后再操作，避免
-    // 界面不同步时盲目重复启动/停止。
-    NSString *currentName = [spec name];
-    BOOL wantStart = YES;
-    if ([currentName isEqualToString:@"关闭服务"]) {
-        wantStart = NO;
-    } else if ([currentName isEqualToString:@"检测中..."] ||
-               [currentName isEqualToString:@"启动中..."] ||
-               [currentName isEqualToString:@"关闭中..."]) {
-        // 处于过渡态时以最后已知状态取反作为期望
-        wantStart = !self.serverRunning;
+    // 事件驱动：点击立即进入"启动中/关闭中"并不可点，发事件给 MCP。
+    // MCP 完成后回 STARTED/STOPPED 事件，这里收到即更新；3s 无回执则发 CHECK。
+    if (self.waitingForStart || self.waitingForStop) {
+        return;  // 等待中不可重复点击
     }
 
-    [spec setName:@"检测中..."];
-    [self reload];
+    BOOL wantStart = ![self serverRunningByStatus];
+    [self writeEnabledPref:wantStart];
 
-    __weak typeof(self) weakSelf = self;
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-        __strong typeof(weakSelf) self = weakSelf;
-        if (!self) return;
-        BOOL isUp = [self serverRunningByStatus];
-        if ([self probeMCPServerOnPort:[self configuredPort]]) isUp = YES;
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                        wantStart ? IOS_MCP_DARWIN_NOTIFICATION_START
+                                                  : IOS_MCP_DARWIN_NOTIFICATION_STOP,
+                                        NULL, NULL, true);
 
-        dispatch_async(dispatch_get_main_queue(), ^{
-            __strong typeof(weakSelf) self = weakSelf;
-            if (!self) return;
+    if (wantStart) {
+        self.waitingForStart = YES;
+        self.waitingForStop = NO;
+    } else {
+        self.waitingForStart = NO;
+        self.waitingForStop = YES;
+    }
 
-            if (isUp == wantStart) {
-                // 实际状态已符合期望方向，无需操作，只纠正 label。
-                self.serverRunning = isUp;
-                [self writeEnabledPref:isUp];
-                PSSpecifier *s = [self specifierForID:@"mcpToggleButton"];
-                if (s) {
-                    [s setName:isUp ? @"关闭服务" : @"启动服务"];
-                    [self reload];
-                }
-                return;
-            }
+    PSSpecifier *s = [self specifierForID:@"mcpToggleButton"];
+    if (s) {
+        [s setName:wantStart ? @"启动中..." : @"关闭中..."];
+        [self reload];
+    }
 
-            // 状态不符合期望，发对应通知。
-            [self writeEnabledPref:wantStart];
-            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-                                                wantStart ? CFSTR("com.witchan.ios-mcp.control/start")
-                                                          : CFSTR("com.witchan.ios-mcp.control/stop"),
-                                                NULL, NULL, true);
-
-            PSSpecifier *s = [self specifierForID:@"mcpToggleButton"];
-            if (s) {
-                [s setName:wantStart ? @"启动中..." : @"关闭中..."];
-                [self reload];
-            }
-
-            // reload 完成后给 cell 加 spinner（模拟系统开关等待态）
-            __weak typeof(self) weakSpin = self;
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)),
-                           dispatch_get_main_queue(), ^{
-                __strong typeof(weakSpin) self = weakSpin;
-                if (self) [self setButtonLoading:YES];
-            });
-
-            // 等 1.5s 让 dylib 起/停 server，再 probe 实际状态刷新 label
-            __weak typeof(self) weakSelf2 = self;
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
-                           dispatch_get_main_queue(), ^{
-                __strong typeof(weakSelf2) self = weakSelf2;
-                if (self) {
-                    [self setButtonLoading:NO];
-                    [self refreshServerStatus];
-                }
-            });
-        });
+    __weak typeof(self) weakSpin = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        __strong typeof(weakSpin) self = weakSpin;
+        if (self) [self setButtonLoading:YES];
     });
+
+    [self scheduleStatusTimeout];
 }
 
 - (void)clearLogs:(PSSpecifier *)spec {

@@ -12,6 +12,11 @@
 #define IOS_MCP_DEBUG_LOGGING_PREFERENCE_KEY @"debugLoggingEnabled"
 #define IOS_MCP_DARWIN_NOTIFICATION_START CFSTR("com.witchan.ios-mcp.control/start")
 #define IOS_MCP_DARWIN_NOTIFICATION_STOP CFSTR("com.witchan.ios-mcp.control/stop")
+// MCP -> Settings 回执事件
+#define IOS_MCP_DARWIN_NOTIFICATION_STARTED CFSTR("com.witchan.ios-mcp.control/started")
+#define IOS_MCP_DARWIN_NOTIFICATION_STOPPED CFSTR("com.witchan.ios-mcp.control/stopped")
+// Settings -> MCP 查询当前状态
+#define IOS_MCP_DARWIN_NOTIFICATION_CHECK CFSTR("com.witchan.ios-mcp.control/check")
 
 static inline BOOL IOSMCPParsePortValue(id value, uint16_t *outPort) {
     long long parsed = 0;

@@ -40,14 +40,6 @@ static void ios_mcp_write_enabled_preference(BOOL enabled) {
     CFPreferencesAppSynchronize((__bridge CFStringRef)IOS_MCP_PREFERENCES_DOMAIN);
 }
 
-// 真实运行状态写入 prefs，供 Settings 面板读取（probe 在 Settings 沙箱里连 127.0.0.1 可能失败）。
-static void ios_mcp_write_server_running_preference(BOOL running) {
-    CFPreferencesSetAppValue(CFSTR("serverRunning"),
-                             running ? kCFBooleanTrue : kCFBooleanFalse,
-                             (__bridge CFStringRef)IOS_MCP_PREFERENCES_DOMAIN);
-    CFPreferencesAppSynchronize((__bridge CFStringRef)IOS_MCP_PREFERENCES_DOMAIN);
-}
-
 static BOOL ios_mcp_is_springboard_process(void) {
     NSString *processName = [[NSProcessInfo processInfo] processName];
     if ([processName isEqualToString:@"SpringBoard"]) {
@@ -61,13 +53,11 @@ static BOOL ios_mcp_is_springboard_process(void) {
 static uint16_t ios_mcp_start_server(void) {
     uint16_t port = IOSMCPConfiguredPort();
     [[MCPServer sharedInstance] startOnPort:port];
-    ios_mcp_write_server_running_preference([[MCPServer sharedInstance] isRunning]);
     return port;
 }
 
 static void ios_mcp_stop_server(void) {
     [[MCPServer sharedInstance] stop];
-    ios_mcp_write_server_running_preference(NO);
 }
 
 static void ios_mcp_handle_control_notification(CFNotificationCenterRef center,
@@ -79,8 +69,18 @@ static void ios_mcp_handle_control_notification(CFNotificationCenterRef center,
         return;
     }
 
+    MCPServer *server = [MCPServer sharedInstance];
+
     if (CFEqual(name, IOS_MCP_DARWIN_NOTIFICATION_START)) {
         ios_mcp_write_enabled_preference(YES);
+        if (server.isRunning) {
+            // 已启动：直接回执，让 Settings 立即更新。
+            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                                IOS_MCP_DARWIN_NOTIFICATION_STARTED,
+                                                NULL, NULL, true);
+            IOS_MCP_LOG(@"Received start request but server already running; posted started");
+            return;
+        }
         uint16_t port = ios_mcp_start_server();
         IOS_MCP_LOG(@"Received start request from Settings on port %u", (unsigned int)port);
         return;
@@ -88,8 +88,29 @@ static void ios_mcp_handle_control_notification(CFNotificationCenterRef center,
 
     if (CFEqual(name, IOS_MCP_DARWIN_NOTIFICATION_STOP)) {
         ios_mcp_write_enabled_preference(NO);
+        if (!server.isRunning) {
+            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                                IOS_MCP_DARWIN_NOTIFICATION_STOPPED,
+                                                NULL, NULL, true);
+            IOS_MCP_LOG(@"Received stop request but server not running; posted stopped");
+            return;
+        }
         ios_mcp_stop_server();
         IOS_MCP_LOG(@"Received stop request from Settings");
+        return;
+    }
+
+    if (CFEqual(name, IOS_MCP_DARWIN_NOTIFICATION_CHECK)) {
+        // Settings 请求当前状态：写 serverStatus + 按实际运行状态回执。
+        CFPreferencesSetAppValue(CFSTR("serverStatus"),
+                                 server.isRunning ? CFSTR("started") : CFSTR("stopped"),
+                                 CFSTR("com.witchan.ios-mcp.preferences"));
+        CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
+        CFStringRef ack = server.isRunning ? IOS_MCP_DARWIN_NOTIFICATION_STARTED
+                                           : IOS_MCP_DARWIN_NOTIFICATION_STOPPED;
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                            ack, NULL, NULL, true);
+        IOS_MCP_LOG(@"Received check request; server running=%d", server.isRunning ? 1 : 0);
     }
 }
 
@@ -116,7 +137,6 @@ static void ios_mcp_autostart_if_needed(NSString *reason) {
                 reason ?: @"unknown",
                 (unsigned int)port);
     [[MCPServer sharedInstance] startOnPort:port];
-    ios_mcp_write_server_running_preference(server.isRunning);
 
     if (!server.isRunning) {
         IOS_MCP_LOG(@"Auto-start attempt (%@) did not start server; later retry may recover",
@@ -204,6 +224,13 @@ __attribute__((constructor)) static void ios_mcp_init(void) {
 
     if (ios_mcp_is_springboard_process()) {
         ios_mcp_register_lifecycle_notifications();
+        /*
+         SpringBoard 重启（可能极端被杀重启）：先重置 serverStatus=stopped，
+         避免停在假的 started。若 enabled=true 再走 autostart 重新启动。
+         */
+        CFPreferencesSetAppValue(CFSTR("serverStatus"), CFSTR("stopped"),
+                                 CFSTR("com.witchan.ios-mcp.preferences"));
+        CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
         /*
          Start once directly from the constructor as well.  The delayed
          dispatch_after retries are still kept as a safety net, but on some
