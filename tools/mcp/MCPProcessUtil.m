@@ -1,9 +1,5 @@
 #import "MCPProcessUtil.h"
-#ifdef MCP_ROOTHIDE
-#include <roothide.h>
-#else
-#import "roothide_shim.h"
-#endif
+#import <HelmCore/HelmCore.h>
 #import <dispatch/dispatch.h>
 #import <errno.h>
 #import <fcntl.h>
@@ -57,7 +53,7 @@ NSString *MCPResolvedJailbreakPath(NSString *path) {
     if (!path.length) return @"";
 
     NSFileManager *fm = [NSFileManager defaultManager];
-    NSString *resolved = jbroot(path);
+    NSString *resolved = [HelmSystemInfo jbroot:path];
     if (resolved.length && [fm fileExistsAtPath:resolved]) return resolved;
     if ([fm fileExistsAtPath:path]) return path;
     return resolved.length ? resolved : path;

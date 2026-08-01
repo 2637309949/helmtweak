@@ -1,15 +1,14 @@
-#import "HIDManager.h"
-#import "IOHIDPrivate.h"
+#import "HelmHIDManager.h"
+#import "HelmLogger.h"
+#import "../Private/IOHIDPrivate.h"
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
-#import "MCPLogger.h"
 
 #define HID_LOG(fmt, ...) do { \
-    if ([MCPLogger isDebugLoggingEnabled]) { \
-        NSString *_iosmcp_log = [NSString stringWithFormat:(@"[HID] " fmt), ##__VA_ARGS__]; \
-        NSLog(@"[witchan][ios-mcp]%@", _iosmcp_log); \
-        [MCPLogger logMessage:_iosmcp_log]; \
+    if ([HelmLogger isDebugLoggingEnabled]) { \
+        NSString *_helm_log = [NSString stringWithFormat:(@"[HID] " fmt), ##__VA_ARGS__]; \
+        [HelmLogger log:@"%@", _helm_log]; \
     } \
 } while (0)
 
@@ -18,7 +17,7 @@ static double _deviceScreenWidth = 0;
 static double _deviceScreenHeight = 0;
 // Keep a tap down long enough for UIKit controls such as UISwitch to observe it as a real touch.
 // Dispatching began/moved/ended back-to-back can be coalesced before the control processes it.
-static const useconds_t kIOSMCPTapPhaseDelayUs = 50 * 1000;
+static const useconds_t kHelmHIDTapPhaseDelayUs = 50 * 1000;
 
 #define MAX_FINGER_INDEX 20
 #define TOUCH_EVENT_NOT_VALID 0
@@ -31,7 +30,7 @@ static const useconds_t kIOSMCPTapPhaseDelayUs = 50 * 1000;
 
 static int _eventsToAppend[MAX_FINGER_INDEX][4];
 
-@implementation IOSMCPHIDManager {
+@implementation HelmHIDManager {
     IOHIDEventSystemClientRef _hidClient;
     dispatch_queue_t _hidQueue;
     CGFloat _screenScale;
@@ -39,11 +38,15 @@ static int _eventsToAppend[MAX_FINGER_INDEX][4];
     CGFloat _screenHeight;
 }
 
++ (BOOL)isSupportedOnCurrentIOS {
+    return YES;
+}
+
 + (instancetype)sharedInstance {
-    static IOSMCPHIDManager *instance;
+    static HelmHIDManager *instance;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        instance = [[IOSMCPHIDManager alloc] init];
+        instance = [[HelmHIDManager alloc] init];
     });
     return instance;
 }
@@ -51,7 +54,7 @@ static int _eventsToAppend[MAX_FINGER_INDEX][4];
 - (instancetype)init {
     self = [super init];
     if (self) {
-        _hidQueue = dispatch_queue_create("com.witchan.ios-mcp.hid", DISPATCH_QUEUE_SERIAL);
+        _hidQueue = dispatch_queue_create("com.helmcore.hid", DISPATCH_QUEUE_SERIAL);
         _hidClient = IOHIDEventSystemClientCreate(kCFAllocatorDefault);
         if (!_hidClient) {
             HID_LOG(@"ERROR: Failed to create IOHIDEventSystemClient");
@@ -81,18 +84,18 @@ static int _eventsToAppend[MAX_FINGER_INDEX][4];
 
 #pragma mark - Button Simulation
 
-- (void)pressButton:(HIDButtonType)button duration:(NSTimeInterval)durationMs completion:(void (^)(BOOL, NSString *))completion {
+- (void)pressButton:(HelmHIDButtonType)button duration:(NSTimeInterval)durationMs completion:(void (^)(BOOL, NSString *))completion {
     dispatch_async(_hidQueue, ^{
         @try {
             uint32_t usagePage = kHIDPage_Consumer;
             uint32_t usage;
 
             switch (button) {
-                case HIDButtonVolumeUp:   usage = kHIDUsage_Csmr_VolumeIncrement; break;
-                case HIDButtonVolumeDown: usage = kHIDUsage_Csmr_VolumeDecrement; break;
-                case HIDButtonPower:      usage = kHIDUsage_Csmr_Power;           break;
-                case HIDButtonHome:       usage = kHIDUsage_Csmr_Menu;            break;
-                case HIDButtonMute:       usage = kHIDUsage_Csmr_Mute;            break;
+                case HelmHIDButtonVolumeUp:   usage = kHIDUsage_Csmr_VolumeIncrement; break;
+                case HelmHIDButtonVolumeDown: usage = kHIDUsage_Csmr_VolumeDecrement; break;
+                case HelmHIDButtonPower:      usage = kHIDUsage_Csmr_Power;           break;
+                case HelmHIDButtonHome:       usage = kHIDUsage_Csmr_Menu;            break;
+                case HelmHIDButtonMute:       usage = kHIDUsage_Csmr_Mute;            break;
                 default:
                     if (completion) completion(NO, @"Unknown button type");
                     return;
@@ -169,23 +172,23 @@ static double normalizedTouchY(CGFloat y) {
     return y / height;
 }
 
-static IOHIDEventRef createChildTouchEvent(TouchPhase phase, int index, CGPoint point) {
+static IOHIDEventRef createChildTouchEvent(HelmTouchPhase phase, int index, CGPoint point) {
     uint32_t eventMask = 0;
     BOOL range = YES;
     BOOL touch = YES;
 
     switch (phase) {
-        case TouchPhaseBegan:
+        case HelmTouchPhaseBegan:
             eventMask = kIOHIDDigitizerEventRange | kIOHIDDigitizerEventTouch;
             range = YES;
             touch = YES;
             break;
-        case TouchPhaseMoved:
+        case HelmTouchPhaseMoved:
             eventMask = kIOHIDDigitizerEventPosition;
             range = YES;
             touch = YES;
             break;
-        case TouchPhaseEnded:
+        case HelmTouchPhaseEnded:
             eventMask = kIOHIDDigitizerEventTouch;
             range = NO;
             touch = NO;
@@ -214,14 +217,14 @@ static IOHIDEventRef createChildTouchEvent(TouchPhase phase, int index, CGPoint 
     return child;
 }
 
-static void appendChildTouchEvent(IOHIDEventRef parent, TouchPhase phase, int index, CGPoint point) {
+static void appendChildTouchEvent(IOHIDEventRef parent, HelmTouchPhase phase, int index, CGPoint point) {
     IOHIDEventRef child = createChildTouchEvent(phase, index, point);
     if (child) {
         IOHIDEventAppendEvent(parent, child, 0);
     }
 }
 
-- (BOOL)performTouchAtPoint:(CGPoint)point phase:(TouchPhase)phase error:(NSString **)error {
+- (BOOL)performTouchAtPoint:(CGPoint)point phase:(HelmTouchPhase)phase error:(NSString **)error {
     IOHIDEventRef parent = IOHIDEventCreateDigitizerEvent(
         kCFAllocatorDefault,
         mach_absolute_time(),
@@ -252,14 +255,14 @@ static void appendChildTouchEvent(IOHIDEventRef parent, TouchPhase phase, int in
     appendChildTouchEvent(parent, phase, fingerIndex, point);
 
     switch (phase) {
-        case TouchPhaseMoved:
-        case TouchPhaseBegan:
+        case HelmTouchPhaseMoved:
+        case HelmTouchPhaseBegan:
             _eventsToAppend[fingerIndex][TOUCH_EVENT_VALID_INDEX] = TOUCH_EVENT_VALID_AT_NEXT_APPEND;
             _eventsToAppend[fingerIndex][TOUCH_EVENT_TYPE_INDEX] = (int)phase;
             _eventsToAppend[fingerIndex][TOUCH_EVENT_X_INDEX] = (int)point.x;
             _eventsToAppend[fingerIndex][TOUCH_EVENT_Y_INDEX] = (int)point.y;
             break;
-        case TouchPhaseEnded:
+        case HelmTouchPhaseEnded:
             _eventsToAppend[fingerIndex][TOUCH_EVENT_VALID_INDEX] = TOUCH_EVENT_NOT_VALID;
             break;
     }
@@ -267,7 +270,7 @@ static void appendChildTouchEvent(IOHIDEventRef parent, TouchPhase phase, int in
     for (int i = 0; i < MAX_FINGER_INDEX; i++) {
         if (_eventsToAppend[i][TOUCH_EVENT_VALID_INDEX] == TOUCH_EVENT_VALID) {
             CGPoint savedPoint = CGPointMake(_eventsToAppend[i][TOUCH_EVENT_X_INDEX], _eventsToAppend[i][TOUCH_EVENT_Y_INDEX]);
-            appendChildTouchEvent(parent, (TouchPhase)_eventsToAppend[i][TOUCH_EVENT_TYPE_INDEX], i, savedPoint);
+            appendChildTouchEvent(parent, (HelmTouchPhase)_eventsToAppend[i][TOUCH_EVENT_TYPE_INDEX], i, savedPoint);
         } else if (_eventsToAppend[i][TOUCH_EVENT_VALID_INDEX] == TOUCH_EVENT_VALID_AT_NEXT_APPEND) {
             _eventsToAppend[i][TOUCH_EVENT_VALID_INDEX] = TOUCH_EVENT_VALID;
         }
@@ -282,7 +285,7 @@ static void appendChildTouchEvent(IOHIDEventRef parent, TouchPhase phase, int in
     return ok;
 }
 
-- (void)sendTouchAtPoint:(CGPoint)point phase:(TouchPhase)phase {
+- (void)sendTouchAtPoint:(CGPoint)point phase:(HelmTouchPhase)phase {
     NSString *error = nil;
     [self performTouchAtPoint:point phase:phase error:&error];
     if (error.length > 0) {
@@ -293,17 +296,17 @@ static void appendChildTouchEvent(IOHIDEventRef parent, TouchPhase phase, int in
 #pragma mark - Tap
 
 - (BOOL)performTapSequenceAtPoint:(CGPoint)point error:(NSString **)error {
-    if (![self performTouchAtPoint:point phase:TouchPhaseBegan error:error]) {
+    if (![self performTouchAtPoint:point phase:HelmTouchPhaseBegan error:error]) {
         return NO;
     }
-    usleep(kIOSMCPTapPhaseDelayUs);
+    usleep(kHelmHIDTapPhaseDelayUs);
 
-    if (![self performTouchAtPoint:point phase:TouchPhaseMoved error:error]) {
+    if (![self performTouchAtPoint:point phase:HelmTouchPhaseMoved error:error]) {
         return NO;
     }
-    usleep(kIOSMCPTapPhaseDelayUs);
+    usleep(kHelmHIDTapPhaseDelayUs);
 
-    return [self performTouchAtPoint:point phase:TouchPhaseEnded error:error];
+    return [self performTouchAtPoint:point phase:HelmTouchPhaseEnded error:error];
 }
 
 - (void)tapAtPoint:(CGPoint)point completion:(void (^)(BOOL, NSString *))completion {
@@ -338,7 +341,7 @@ static void appendChildTouchEvent(IOHIDEventRef parent, TouchPhase phase, int in
             NSInteger totalSteps = steps > 0 ? steps : 20;
             useconds_t stepDelay = (useconds_t)((duration * 1000.0) / totalSteps);
 
-            if (![self performTouchAtPoint:from phase:TouchPhaseBegan error:&error]) {
+            if (![self performTouchAtPoint:from phase:HelmTouchPhaseBegan error:&error]) {
                 if (completion) completion(NO, error);
                 return;
             }
@@ -350,7 +353,7 @@ static void appendChildTouchEvent(IOHIDEventRef parent, TouchPhase phase, int in
                     from.x + (to.x - from.x) * t,
                     from.y + (to.y - from.y) * t
                 );
-                if (![self performTouchAtPoint:current phase:TouchPhaseMoved error:&error]) {
+                if (![self performTouchAtPoint:current phase:HelmTouchPhaseMoved error:&error]) {
                     if (completion) completion(NO, error);
                     return;
                 }
@@ -360,7 +363,7 @@ static void appendChildTouchEvent(IOHIDEventRef parent, TouchPhase phase, int in
             }
 
             usleep(10000);
-            if (![self performTouchAtPoint:to phase:TouchPhaseEnded error:&error]) {
+            if (![self performTouchAtPoint:to phase:HelmTouchPhaseEnded error:&error]) {
                 if (completion) completion(NO, error);
                 return;
             }
@@ -446,14 +449,14 @@ static void appendChildTouchEvent(IOHIDEventRef parent, TouchPhase phase, int in
             if (holdSteps < 2) holdSteps = 2;
             useconds_t holdStepDelay = (useconds_t)((hold * 1000.0) / holdSteps);
 
-            if (![self performTouchAtPoint:firstPoint phase:TouchPhaseBegan error:&error]) {
+            if (![self performTouchAtPoint:firstPoint phase:HelmTouchPhaseBegan error:&error]) {
                 if (completion) completion(NO, error);
                 return;
             }
             usleep(holdStepDelay);
 
             for (NSInteger i = 1; i <= holdSteps; i++) {
-                if (![self performTouchAtPoint:firstPoint phase:TouchPhaseMoved error:&error]) {
+                if (![self performTouchAtPoint:firstPoint phase:HelmTouchPhaseMoved error:&error]) {
                     if (completion) completion(NO, error);
                     return;
                 }
@@ -501,7 +504,7 @@ static void appendChildTouchEvent(IOHIDEventRef parent, TouchPhase phase, int in
                         segmentStart.x + (segmentEnd.x - segmentStart.x) * t,
                         segmentStart.y + (segmentEnd.y - segmentStart.y) * t
                     );
-                    if (![self performTouchAtPoint:current phase:TouchPhaseMoved error:&error]) {
+                    if (![self performTouchAtPoint:current phase:HelmTouchPhaseMoved error:&error]) {
                         if (completion) completion(NO, error);
                         return;
                     }
@@ -515,7 +518,7 @@ static void appendChildTouchEvent(IOHIDEventRef parent, TouchPhase phase, int in
             }
 
             usleep(10000);
-            if (![self performTouchAtPoint:lastPoint phase:TouchPhaseEnded error:&error]) {
+            if (![self performTouchAtPoint:lastPoint phase:HelmTouchPhaseEnded error:&error]) {
                 if (completion) completion(NO, error);
                 return;
             }

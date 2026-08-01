@@ -8,5 +8,6 @@
 #import <HelmCore/System/HelmLogger.h>
 #import <HelmCore/System/HelmScreenManager.h>
 #import <HelmCore/System/HelmOCRManager.h>
+#import <HelmCore/System/HelmHIDManager.h>
 
 #endif

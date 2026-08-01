@@ -17,7 +17,7 @@ HelmTweak_ENTITLEMENTS = entitlements.plist
 # ===== HelmMCP — forked from witchan/ios-mcp (GPL-3.0), core dylib only =====
 # Helpers (mcp-root/mcp-ldid/mcp-logreader/AppSync/mcp-roothelper) 见 tools/helpers/
 HelmMCP_FILES = tools/mcp/Tweak.x tools/mcp/MCPServer.m tools/mcp/MCPLogger.m \
-                tools/mcp/HIDManager.m tools/mcp/ClipboardManager.m \
+                tools/mcp/ClipboardManager.m \
                 tools/mcp/AppManager.m tools/mcp/AccessibilityManager.m tools/mcp/TextInputManager.m \
                 tools/mcp/FileSystemManager.m tools/mcp/LogManager.m \
                 tools/mcp/MCPProcessUtil.m tools/mcp/MCPAXQueryContext.m tools/mcp/MCPAXRemoteContextResolver.m \

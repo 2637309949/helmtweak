@@ -1,5 +1,4 @@
 #import "MCPServer.h"
-#import "HIDManager.h"
 #import <HelmCore/HelmCore.h>
 #import "ClipboardManager.h"
 #import "AppManager.h"
@@ -656,8 +655,8 @@ static NSDictionary *MCPElementSummary(NSDictionary *element) {
 - (NSDictionary *)handleToolsList:(id)reqId;
 - (NSDictionary *)handleToolsCall:(id)reqId params:(NSDictionary *)params;
 - (NSDictionary *)lockedScreenGuardResponseForTool:(NSString *)toolName reqId:(id)reqId;
-- (NSDictionary *)executeButtonPress:(id)reqId button:(HIDButtonType)button args:(NSDictionary *)args label:(NSString *)label;
-- (BOOL)pressButtonSynchronously:(HIDButtonType)button duration:(NSTimeInterval)duration timeout:(NSTimeInterval)timeout error:(NSString **)error;
+- (NSDictionary *)executeButtonPress:(id)reqId button:(HelmHIDButtonType)button args:(NSDictionary *)args label:(NSString *)label;
+- (BOOL)pressButtonSynchronously:(HelmHIDButtonType)button duration:(NSTimeInterval)duration timeout:(NSTimeInterval)timeout error:(NSString **)error;
 - (NSDictionary *)executeWakeAndHome:(id)reqId args:(NSDictionary *)args;
 - (NSDictionary *)executeTap:(id)reqId args:(NSDictionary *)args;
 - (NSDictionary *)executeTapElement:(id)reqId args:(NSDictionary *)args;
@@ -2267,17 +2266,17 @@ static NSString *MCPLogId(id reqId) {
 
     // Button tools
     if ([toolName isEqualToString:@"press_volume_up"]) {
-        return [self executeButtonPress:reqId button:HIDButtonVolumeUp args:args label:@"Volume Up"];
+        return [self executeButtonPress:reqId button:HelmHIDButtonVolumeUp args:args label:@"Volume Up"];
     } else if ([toolName isEqualToString:@"press_volume_down"]) {
-        return [self executeButtonPress:reqId button:HIDButtonVolumeDown args:args label:@"Volume Down"];
+        return [self executeButtonPress:reqId button:HelmHIDButtonVolumeDown args:args label:@"Volume Down"];
     } else if ([toolName isEqualToString:@"press_power"]) {
-        return [self executeButtonPress:reqId button:HIDButtonPower args:args label:@"Power"];
+        return [self executeButtonPress:reqId button:HelmHIDButtonPower args:args label:@"Power"];
     } else if ([toolName isEqualToString:@"press_home"]) {
-        return [self executeButtonPress:reqId button:HIDButtonHome args:args label:@"Home"];
+        return [self executeButtonPress:reqId button:HelmHIDButtonHome args:args label:@"Home"];
     } else if ([toolName isEqualToString:@"wake_and_home"]) {
         return [self executeWakeAndHome:reqId args:args];
     } else if ([toolName isEqualToString:@"toggle_mute"]) {
-        return [self executeButtonPress:reqId button:HIDButtonMute args:args label:@"Mute"];
+        return [self executeButtonPress:reqId button:HelmHIDButtonMute args:args label:@"Mute"];
     }
     // Touch tools
     else if ([toolName isEqualToString:@"tap_screen"]) {
@@ -2413,7 +2412,7 @@ static NSString *MCPLogId(id reqId) {
 
 #pragma mark - Tool Execution Helpers
 
-- (NSDictionary *)executeButtonPress:(id)reqId button:(HIDButtonType)button args:(NSDictionary *)args label:(NSString *)label {
+- (NSDictionary *)executeButtonPress:(id)reqId button:(HelmHIDButtonType)button args:(NSDictionary *)args label:(NSString *)label {
     NSString *paramError = nil;
     double duration = 100;
     if (!MCPNumberFromArgs(args, @"duration", 100, NO, &duration, &paramError)) {
@@ -2421,14 +2420,14 @@ static NSString *MCPLogId(id reqId) {
     }
     if (duration <= 0) duration = 100;
 
-    BOOL isHomeButton = (button == HIDButtonHome);
+    BOOL isHomeButton = (button == HelmHIDButtonHome);
     NSDictionary *beforeState = isHomeButton ? [[HelmScreenManager sharedInstance] deviceInteractionState] : nil;
 
     __block BOOL ok = NO;
     __block NSString *err = nil;
     dispatch_semaphore_t sem = dispatch_semaphore_create(0);
 
-    [[IOSMCPHIDManager sharedInstance] pressButton:button duration:duration completion:^(BOOL success, NSString *error) {
+    [[HelmHIDManager sharedInstance] pressButton:button duration:duration completion:^(BOOL success, NSString *error) {
         ok = success;
         err = error;
         dispatch_semaphore_signal(sem);
@@ -2462,12 +2461,12 @@ static NSString *MCPLogId(id reqId) {
     return [self mcpSuccess:reqId text:[NSString stringWithFormat:@"Failed to press %@: %@", label, err ?: @"timeout"] isError:YES];
 }
 
-- (BOOL)pressButtonSynchronously:(HIDButtonType)button duration:(NSTimeInterval)duration timeout:(NSTimeInterval)timeout error:(NSString **)error {
+- (BOOL)pressButtonSynchronously:(HelmHIDButtonType)button duration:(NSTimeInterval)duration timeout:(NSTimeInterval)timeout error:(NSString **)error {
     __block BOOL ok = NO;
     __block NSString *err = nil;
     dispatch_semaphore_t sem = dispatch_semaphore_create(0);
 
-    [[IOSMCPHIDManager sharedInstance] pressButton:button duration:duration completion:^(BOOL success, NSString *buttonError) {
+    [[HelmHIDManager sharedInstance] pressButton:button duration:duration completion:^(BOOL success, NSString *buttonError) {
         ok = success;
         err = buttonError;
         dispatch_semaphore_signal(sem);
@@ -2522,19 +2521,19 @@ static NSString *MCPLogId(id reqId) {
     NSMutableArray<NSString *> *steps = [NSMutableArray array];
 
     if ([sequenceUsed isEqualToString:@"power_then_home"]) {
-        if (![self pressButtonSynchronously:HIDButtonPower duration:duration timeout:5 error:&err]) {
+        if (![self pressButtonSynchronously:HelmHIDButtonPower duration:duration timeout:5 error:&err]) {
             return [self mcpSuccess:reqId text:[NSString stringWithFormat:@"wake_and_home failed at power: %@", err ?: @"unknown"] isError:YES];
         }
         [steps addObject:@"power"];
         usleep((useconds_t)(delayMs * 1000.0));
 
-        if (![self pressButtonSynchronously:HIDButtonHome duration:duration timeout:5 error:&err]) {
+        if (![self pressButtonSynchronously:HelmHIDButtonHome duration:duration timeout:5 error:&err]) {
             return [self mcpSuccess:reqId text:[NSString stringWithFormat:@"wake_and_home failed at home: %@", err ?: @"unknown"] isError:YES];
         }
         [steps addObject:@"home"];
     } else {
         for (NSInteger idx = 0; idx < 2; idx++) {
-            if (![self pressButtonSynchronously:HIDButtonHome duration:duration timeout:5 error:&err]) {
+            if (![self pressButtonSynchronously:HelmHIDButtonHome duration:duration timeout:5 error:&err]) {
                 return [self mcpSuccess:reqId text:[NSString stringWithFormat:@"wake_and_home failed at home #%ld: %@", (long)(idx + 1), err ?: @"unknown"] isError:YES];
             }
             [steps addObject:@"home"];
@@ -2571,7 +2570,7 @@ static NSString *MCPLogId(id reqId) {
     __block NSString *err = nil;
     dispatch_semaphore_t sem = dispatch_semaphore_create(0);
 
-    [[IOSMCPHIDManager sharedInstance] tapAtPoint:point completion:^(BOOL success, NSString *error) {
+    [[HelmHIDManager sharedInstance] tapAtPoint:point completion:^(BOOL success, NSString *error) {
         ok = success;
         err = error;
         dispatch_semaphore_signal(sem);
@@ -2665,7 +2664,7 @@ static NSString *MCPLogId(id reqId) {
 
     __block BOOL ok = NO; __block NSString *err = nil;
     dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-    [[IOSMCPHIDManager sharedInstance] tapAtPoint:CGPointMake(tapX, tapY) completion:^(BOOL success, NSString *error) {
+    [[HelmHIDManager sharedInstance] tapAtPoint:CGPointMake(tapX, tapY) completion:^(BOOL success, NSString *error) {
         ok = success; err = error; dispatch_semaphore_signal(sem);
     }];
     dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC));
@@ -2761,7 +2760,7 @@ static NSString *MCPLogId(id reqId) {
     __block NSString *err = nil;
     dispatch_semaphore_t sem = dispatch_semaphore_create(0);
 
-    [[IOSMCPHIDManager sharedInstance] swipeFromPoint:from toPoint:to duration:duration steps:steps completion:^(BOOL success, NSString *error) {
+    [[HelmHIDManager sharedInstance] swipeFromPoint:from toPoint:to duration:duration steps:steps completion:^(BOOL success, NSString *error) {
         ok = success;
         err = error;
         dispatch_semaphore_signal(sem);
@@ -3459,7 +3458,7 @@ static NSString *MCPLogId(id reqId) {
     __block NSString *err = nil;
     dispatch_semaphore_t sem = dispatch_semaphore_create(0);
 
-    [[IOSMCPHIDManager sharedInstance] longPressAtPoint:point duration:duration completion:^(BOOL success, NSString *error) {
+    [[HelmHIDManager sharedInstance] longPressAtPoint:point duration:duration completion:^(BOOL success, NSString *error) {
         ok = success;
         err = error;
         dispatch_semaphore_signal(sem);
@@ -3489,7 +3488,7 @@ static NSString *MCPLogId(id reqId) {
     __block NSString *err = nil;
     dispatch_semaphore_t sem = dispatch_semaphore_create(0);
 
-    [[IOSMCPHIDManager sharedInstance] doubleTapAtPoint:point interval:interval completion:^(BOOL success, NSString *error) {
+    [[HelmHIDManager sharedInstance] doubleTapAtPoint:point interval:interval completion:^(BOOL success, NSString *error) {
         ok = success;
         err = error;
         dispatch_semaphore_signal(sem);
@@ -3543,7 +3542,7 @@ static NSString *MCPLogId(id reqId) {
     __block NSString *err = nil;
     dispatch_semaphore_t sem = dispatch_semaphore_create(0);
 
-    [[IOSMCPHIDManager sharedInstance] dragAlongPoints:points
+    [[HelmHIDManager sharedInstance] dragAlongPoints:points
                                           holdDuration:holdDuration
                                           moveDuration:moveDuration
                                                  steps:steps

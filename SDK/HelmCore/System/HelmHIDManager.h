@@ -1,29 +1,36 @@
+#ifndef HelmHIDManager_h
+#define HelmHIDManager_h
+
 #import <Foundation/Foundation.h>
 #import <CoreGraphics/CoreGraphics.h>
 
-typedef NS_ENUM(NSUInteger, HIDButtonType) {
-    HIDButtonVolumeUp,
-    HIDButtonVolumeDown,
-    HIDButtonPower,
-    HIDButtonHome,
-    HIDButtonMute,
+typedef NS_ENUM(NSUInteger, HelmHIDButtonType) {
+    HelmHIDButtonVolumeUp,
+    HelmHIDButtonVolumeDown,
+    HelmHIDButtonPower,
+    HelmHIDButtonHome,
+    HelmHIDButtonMute,
 };
 
-typedef NS_ENUM(NSUInteger, TouchPhase) {
-    TouchPhaseBegan,
-    TouchPhaseMoved,
-    TouchPhaseEnded,
+typedef NS_ENUM(NSUInteger, HelmTouchPhase) {
+    HelmTouchPhaseBegan,
+    HelmTouchPhaseMoved,
+    HelmTouchPhaseEnded,
 };
 
-@interface IOSMCPHIDManager : NSObject
+/// HID 触摸/按键注入。全部走 IOHIDEventSystemClient（私有 IOKit API 集中在 HelmCore/Private/IOHIDPrivate.h），
+/// 工具层不直接接触 IOHID 私有函数。
+@interface HelmHIDManager : NSObject
+
++ (BOOL)isSupportedOnCurrentIOS;
 
 + (instancetype)sharedInstance;
 
 /// Simulate a physical button press with optional duration (ms)
-- (void)pressButton:(HIDButtonType)button duration:(NSTimeInterval)durationMs completion:(void (^)(BOOL success, NSString *error))completion;
+- (void)pressButton:(HelmHIDButtonType)button duration:(NSTimeInterval)durationMs completion:(void (^)(BOOL success, NSString *error))completion;
 
 /// Send a single touch event at screen point coordinates
-- (void)sendTouchAtPoint:(CGPoint)point phase:(TouchPhase)phase;
+- (void)sendTouchAtPoint:(CGPoint)point phase:(HelmTouchPhase)phase;
 
 /// Simulate a tap at screen point coordinates
 - (void)tapAtPoint:(CGPoint)point completion:(void (^)(BOOL success, NSString *error))completion;
@@ -61,3 +68,5 @@ typedef NS_ENUM(NSUInteger, TouchPhase) {
            completion:(void (^)(BOOL success, NSString *error))completion;
 
 @end
+
+#endif
