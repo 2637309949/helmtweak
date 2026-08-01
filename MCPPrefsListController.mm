@@ -1,8 +1,8 @@
 // MCPPrefsListController — MCP 工具子面板
 //
 // 进面板时 probe :8686/mcp 实际状态：
-//   - server 起来了 -> label = "关闭 MCP 服务"，pref enabled = True
-//   - server 没起 -> label = "启动 MCP 服务"，pref enabled = False
+//   - server 起来了 -> label = "关闭服务"，pref enabled = True
+//   - server 没起 -> label = "启动服务"，pref enabled = False
 // 重启手机后 autostart 失败的话，进面板会显示 server 实际没起，不会误显示开。
 //
 // PSButtonCell title 刷新用 [spec setName:] + [self reload]。
@@ -93,12 +93,6 @@
 }
 
 - (void)refreshServerStatus {
-    PSSpecifier *spec = [self specifierForID:@"mcpToggleButton"];
-    if (spec) {
-        [spec setName:@"检测中..."];
-        [self reload];
-    }
-
     __weak typeof(self) weakSelf = self;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         __strong typeof(weakSelf) self = weakSelf;
@@ -114,7 +108,7 @@
             self.serverRunning = isUp;
             PSSpecifier *s = [self specifierForID:@"mcpToggleButton"];
             if (s) {
-                [s setName:isUp ? @"关闭 MCP 服务" : @"启动 MCP 服务"];
+                [s setName:isUp ? @"关闭服务" : @"启动服务"];
                 [self reload];
             }
         });

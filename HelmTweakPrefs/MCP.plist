@@ -8,9 +8,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>MCP 工具（基于 ios-mcp）</string>
-			<key>footerText</key>
-			<string>以下配置写入 com.witchan.ios-mcp.preferences 域，ios-mcp 主 dylib 监听 darwin notification 自动响应。默认关闭，开启后立即启动 MCP server。</string>
+			<string>MCP</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -26,15 +24,13 @@
 			<key>id</key>
 			<string>mcpToggleButton</string>
 			<key>label</key>
-			<string>启动 MCP 服务</string>
+			<string>启动服务</string>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
 			<string>HTTP 端口</string>
-			<key>footerText</key>
-			<string>默认端口 8686。范围 1024-65535。服务运行时改端口自动切换。</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -58,9 +54,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Debug 日志</string>
-			<key>footerText</key>
-			<string>开启后服务启动/HTTP 请求/MCP 工具调用/耗时/错误写入文件，便于排查。</string>
+			<string>Debug</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -72,7 +66,7 @@
 			<key>key</key>
 			<string>debugLoggingEnabled</string>
 			<key>label</key>
-			<string>启用 Debug 日志</string>
+			<string>启动 Debug</string>
 		</dict>
 	</array>
 	<key>title</key>
