@@ -1,42 +1,33 @@
-# PROGRESS — Phase 3 (HelmCore SDK) 全部完成
+# PROGRESS — Phase 3 + Phase 4 全部完成（HelmCore SDK 全量接入）
 
 下次打开先看这个 + [CLAUDE.md](CLAUDE.md)，直接接着干。
 
 ## 当前状态 ✅
 
-- **Phase 3 全部完成**：HelmCore SDK 建立，HelmMCP 切到 HelmCore，工具 manifest + prefs 兼容性过滤落地，CI 全绿。
-- **版本**：`1.0.27`。
-- **step 5 变更**：
-  - [HelmTweakPrefs/tool_manifest.json](HelmTweakPrefs/tool_manifest.json) — 工具清单，每项带 `minIOS` / `maxIOS` / `scheme`（roothide-only 工具标 `"scheme":"roothide"`）。
-  - [HelmTweakPrefs.mm](HelmTweakPrefs.mm) — Root 面板 append 工具箱列表，按 `[HelmSystemInfo iOSMajorVersion]` + `isRootless` 灰掉不兼容 cell（标注"需要 iOS X+"/"需要 roothide 环境"）。
-  - 根 [Makefile](Makefile) — `HelmTweakPrefs_CFLAGS/LDFLAGS` 链接 HelmCore.dylib + `-I.../SDK`。
-- **step 4 变更**：
-  - [tools/mcp/MCPServer.m](tools/mcp/MCPServer.m) — `#import <HelmCore/HelmCore.h>`，调用换成 `[HelmScreenManager sharedInstance]` / `[HelmOCRManager sharedInstance]`。
-  - 删掉 [tools/mcp/ScreenManager.h](tools/mcp/ScreenManager.h) / `.m` 和 [tools/mcp/OCRManager.h](tools/mcp/OCRManager.h) / `.m`（被 HelmCore 版取代）。
-  - 根 [Makefile](Makefile) — `HelmMCP_CFLAGS += -I$(THEOS_PROJECT_DIR)/SDK`，`HelmMCP_LDFLAGS` 链接 `SDK/HelmCore/.theos/obj/HelmCore.dylib`。
-- **新文件（step 3）**：
-  - [SDK/HelmCore/System/HelmLogger.h](SDK/HelmCore/System/HelmLogger.h) / [.m](SDK/HelmCore/System/HelmLogger.m) — 最小日志器（NSLog + `/var/mobile/Library/Logs/HelmCore/helmcore.log`），debug 开关复用 MCP prefs。
-  - [SDK/HelmCore/System/HelmScreenManager.h](SDK/HelmCore/System/HelmScreenManager.h) / [.m](SDK/HelmCore/System/HelmScreenManager.m) — 私有 SB 调用保持软引用，`+isSupportedOnCurrentIOS`。
-  - [SDK/HelmCore/System/HelmOCRManager.h](SDK/HelmCore/System/HelmOCRManager.h) / [.m](SDK/HelmCore/System/HelmOCRManager.m) — Vision OCR，支持判断用 runtime `@available`。
-- **新文件（step 1-2）**：SDK/HelmCore Makefile（library.mk，dual scheme）+ umbrella HelmCore.h + HelmSystemInfo + Private/HelmPrivateHeaders.h（SpringBoardPrivate.h 已成 shim）。
-- **构建接入**：CI 前置 `Build HelmCore SDK library (rootless)`；主 Makefile `after-stage::` 把 HelmCore.dylib 拷进 deb `/usr/lib/`。
+- **Phase 3 + Phase 4 全部完成**：HelmCore SDK 建立，HelmMCP 所有私有 API 调用全部抽进 HelmCore，CI 全绿。
+- **版本**：`1.0.27`。最新 CI run 30680105948。
+- **Phase 4 完成（2026-08-01）**：
+  - `HelmHIDManager`（touch/button 注入）→ SDK，`HelmCore/Private/IOHIDPrivate.h` 承载 IOHID 私有声明。
+  - `AppManager` / `AccessibilityManager` / `MCPAX*` 栈 / `MCPUIElement*` / `TextInputManager` / `MCPProcessUtil` 全部 git mv 进 `SDK/HelmCore/System/`。
+  - `AXPrivate.h` → `HelmCore/Private` + shim。
+  - 转换：`MCPLogger`→`HelmLogger`；`SpringBoardPrivate`/`AXPrivate`/`IOHIDPrivate` import → `../Private/...`；`MCP_ROOTHIDE`→`HELM_CORE_ROOTHIDE`；`jbroot()`/`rootfs()`→`[HelmSystemInfo ...]`；`IOSMCPPreferences` 域字符串内联。
+  - `AppManager`/`AccessibilityManager`/`TextInputManager` 加 `+isSupportedOnCurrentIOS`。
+  - `MCPAXNodeSource` 版本判断改走 `[HelmSystemInfo iOSMajorVersion]`。
+  - **tools/mcp 现在只剩**：MCPServer + MCPLogger + Clipboard/FileSystem/LogManager（无私有 API 的普通 Manager）。
+- **私有 header 全部集中**：`HelmCore/Private/` = HelmPrivateHeaders.h（SB 类）+ AXPrivate.h + IOHIDPrivate.h；tools/mcp 下同名文件全是 shim。
+- **坑（本轮踩过）**：
+  - **shim guard 不能和 SDK 目标头同名**（否则 SDK 头被跳过）。shim 用独立 guard。
+  - **PowerShell `Set-Content` 会弄坏 UTF-8 多字节字符**（`…` U+2026 → 乱码），CI -Werror 报 `missing terminating '"'`。Windows 上不要用 PowerShell 改源码，用 edit 工具或 `git mv` 后按行改。
 
-## Phase 3 已完成（2026-08-01）
+## Phase 4 剩余
 
-HelmCore SDK 建立 + 全链路接入完成，见上面「当前状态」。
+- ClipboardManager / FileSystemManager / LogManager 无私有 API 访问，留在 tools/mcp 即可（低价值不动）。
+- roothide 本地 build 验证（CI 只 build rootless）：`make clean && make package THEOS_PACKAGE_SCHEME=roothide`。
 
-## 下次干啥（候选，挑一个继续）
+## 装机验证
 
-- **Phase 4 剩余**：把剩下的 MCP Manager 抽进 HelmCore：
-  - AppManager（2499 行，重 roothide 逻辑 + SpringBoardPrivate）— 大活，可分拆。
-  - AccessibilityManager + MCPAX 栈（AX 树、UI element 序列化，~7000 行）— 最大最难。
-  - TextInputManager（依赖 AccessibilityManager.frontmostApplicationInfo，等 AX 先抽）。
-  - ClipboardManager / FileSystemManager / LogManager（无私有 API，价值低，可不动）。
-- **已抽**：HelmSystemInfo / HelmScreenManager / HelmOCRManager / HelmHIDManager + HelmLogger。
-  MCPProcessUtil 的 jbroot/rootfs 已改走 [HelmSystemInfo]，不再直接碰 roothide_shim.h。
-- **shim guard 坑**（本轮踩过）：tools/mcp/IOHIDPrivate.h 做 shim 时 guard 不能和 SDK 目标头
-  （HelmPrivateHeaders.h / IOHIDPrivate.h）同名，否则 SDK 头整个被跳过 → 类型缺失。shim 用独立 guard。
-- **验证**：装机验证 1.0.27 的 prefs 工具箱列表 + HelmMCP 截图/OCR/触摸行为不变（见下「复现部署」）。
+- 版本 `1.0.27`，CI artifact：`HelmTweak-rootless`。
+- 验证点：prefs 工具箱列表（含 minIOS/scheme 灰掉）、MCP server 46 tools、截图/OCR/触摸/文本输入、install_app/uninstall_app。
 
 ## Phase 2c 已完成的 5 个迭代
 
@@ -53,25 +44,6 @@ HelmCore SDK 建立 + 全链路接入完成，见上面「当前状态」。
 - `zip_err_str.c` 是 CMake 生成的，源码不带 — 写了 [gen_zip_err_str.py](third_party/libzip/gen_zip_err_str.py)（Python 移植 `GenerateZipErrorStrings.cmake`）。
 - Theos `library.mk` 默认只 build dylib，要 `zip_LINKAGE_TYPE = static` 才 emit `.a`。
 - mcp-appinst 在 `tools/helpers/mcp-appsync/appinst/`（**4 层深**）→ `../../../../` 才到 repo root；mcp-roothelper / mcp-ldid 在 `tools/helpers/<name>/`（3 层深）→ `../../../`。差一层 CI 才暴露。
-
-## 下次干啥：Phase 3 — HelmCore SDK 层
-
-**目标**：把 HelmMCP 里散在各 Manager 的 iOS 版本/私有 API 调用抽到 `SDK/HelmCore/` dylib，工具层（`tools/*`、`HelmTweakPrefs/`）只走 HelmCore 高层 API，不直接碰私有 header / 版本号 / 私有 selector。
-
-**铁律**（CLAUDE.md 已有，重点重申）：
-- 工具层**绝不直接**接触：私有 header、`iOSVersion == 17` 硬编码、`[SBIconController ...]` 直接调、`#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 170000` 编译期单独分支。
-- 一律经 HelmCore：`SDK/HelmCore/Private/HelmPrivateHeaders.h` 集中声明私有 header；`HelmSystemInfo` 暴露 `iOSMajorVersion` / `isRootless` / `jbRootPath` / `+pathFor:`；私有 selector 走 `NSClassFromString` + `NSSelectorFromString` + `dlsym` 软引用，找不到走 capability query 返回 nil/fallback，**绝不 crash**。
-- 每个 Manager 暴露 `+ (BOOL)isSupportedOnCurrentIOS`，工具启动先问再做。
-- runtime `@available(iOS X, *)` 分派，**不**靠编译期 `#if`。
-- 工具 manifest 字段 `minIOS` / `maxIOS`，不兼容的 cell 灰掉。
-- fat arm64 + arm64e，rootless 路径自动从 `HelmSystemInfo` 拿。
-
-**起步顺序（建议）**：
-1. 建 `SDK/HelmCore/` 目录 + Makefile（Theos `library.mk`，`LIBRARY_NAME = HelmCore`，dual scheme 自适应）。
-2. 第一个 Manager 抽 `HelmSystemInfo`（最基础，其他都依赖它）—— 把 [tools/mcp/roothide_shim.h](tools/mcp/roothide_shim.h) 的 `rootfs()` / `jbroot()` 升级成正式 API。
-3. 抽 `HelmScreenManager` + `HelmOCRManager`（已有实现，搬 + 加 `+isSupportedOnCurrentIOS` + 把硬编码 iOS 版本分支改成 runtime `@available`）。
-4. HelmMCP 各 Manager 改成调用 HelmCore，验证行为不变。
-5. 工具 manifest 加 `minIOS` / `maxIOS` 字段，prefs 列表里灰掉不兼容 cell。
 
 ## 复现部署（下次直接跑）
 
