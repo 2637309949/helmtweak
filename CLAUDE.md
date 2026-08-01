@@ -19,7 +19,8 @@ Project memory for fast pickup. Read this before touching the build.
 - `SDK/HelmCore/` = **SDK 层**（跨应用复用 dylib + 私有 header 集中声明）。
 - `tools/` = **应用层**。目前只有 `tools/mcp/`（用户可用的 MCP 工具）和其内部 `tools/mcp/helpers/`（MCP 的后端 CLI，不暴露给用户）。
 - `scripts/` = **开发工具链**（部署/验证/诊断，不进 deb）。不参与打包。
-- **新增规则**：用户可见的"工具"只能出现在 MCP 的 tools 里；CLI helper 一律放 `tools/mcp/helpers/`；部署/诊断脚本放 `scripts/`；跨应用能力放 `SDK/HelmCore/`。
+- `third_party/` = **vendored 构建依赖**（第三方源码/静态库，如 ldid/libzip/procursus-sdk，只被 helpers 链接，参与编译不进 deb 安装）。
+- **新增规则**：用户可见的"工具"只能出现在 MCP 的 tools 里；CLI helper 一律放 `tools/mcp/helpers/`；部署/诊断脚本放 `scripts/`；跨应用能力放 `SDK/HelmCore/`；第三方 vendored 依赖放 `third_party/`。
 
 ## Build & run
 

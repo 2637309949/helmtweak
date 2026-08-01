@@ -1,8 +1,8 @@
-# tools/helpers/
+# tools/mcp/helpers/
 
-通用 HelmTweak CLI 基础设施。forked from `witchan/ios-mcp` (GPL-3.0)，按 `THEOS_PACKAGE_SCHEME` 自适应 rootless / roothide。
+HelmMCP 内部 CLI 基础设施（**不暴露给用户**，被 MCP server 调用）。forked from `witchan/ios-mcp` (GPL-3.0)，按 `THEOS_PACKAGE_SCHEME` 自适应 rootless / roothide。
 
-每个 helper 自己一个 Makefile，子项目形式（抄上游 build 模式）。主 [Makefile](../../Makefile) 的 `after-stage::` 按 scheme 把 build 好的 binary bundle 进 deb staging。
+每个 helper 自己一个 Makefile，子项目形式（抄上游 build 模式）。主 [Makefile](../../../Makefile) 的 `after-stage::` 按 scheme 把 build 好的 binary bundle 进 deb staging。
 
 ## 已 fork
 
@@ -23,7 +23,7 @@
 
 ```bash
 # 单独 build 一个 helper（在 helper 目录下）
-cd tools/helpers/mcp-logreader
+cd tools/mcp/helpers/mcp-logreader
 make clean && make THEOS_PACKAGE_SCHEME=rootless
 # 或 roothide
 make clean && make THEOS_PACKAGE_SCHEME=roothide
@@ -37,5 +37,5 @@ make clean && make package THEOS_PACKAGE_SCHEME=rootless
 GitHub Actions 用 `Randomblock1/theos-action@v1`，只 clone `theos/theos` + `theos/sdks`，**不包含 `libroothide` 也不带 `$(THEOS)/lib/libzip.a`**。所以：
 
 - CI 只 build rootless，roothide 必须在 roothide 越狱设备上本地 build（roothide 设备的完整 Theos 自带 libzip.a）。
-- libzip 改成 vendored 源码（[third_party/libzip/](../../third_party/libzip/)），deflate-only build，CI 上能 build。mcp-appinst 现在跟 mcp-ldid 一样 rootless 上能 bundle。
+- libzip 改成 vendored 源码（[third_party/libzip/](../../../third_party/libzip/)），deflate-only build，CI 上能 build。mcp-appinst 现在跟 mcp-ldid 一样 rootless 上能 bundle。
 - mcp-roothelper 仍是 roothide-only（依赖 `roothide.h` + libroothide + setuid bit）。
