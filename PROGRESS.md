@@ -1,24 +1,27 @@
-# PROGRESS — Phase 3 (HelmCore SDK) 起步：step 1-2 done
+# PROGRESS — Phase 3 (HelmCore SDK) step 1-3 done
 
 下次打开先看这个 + [CLAUDE.md](CLAUDE.md)，直接接着干。
 
 ## 当前状态 ✅
 
-- **Phase 3 step 1-2 完成**：`SDK/HelmCore/` SDK 骨架 + 第一个 Manager `HelmSystemInfo`，CI 全绿。
+- **Phase 3 step 1-3 完成**：`SDK/HelmCore/` SDK 骨架 + `HelmSystemInfo` + `HelmScreenManager` + `HelmOCRManager`，CI 全绿。
 - **版本**：`1.0.26`。CI run <待填>。
-- **新文件**：
+- **新文件（step 1-2）**：
   - [SDK/HelmCore/Makefile](SDK/HelmCore/Makefile) — Theos `library.mk`，`LIBRARY_NAME = HelmCore`，dual scheme 自适应（roothide 链 libroothide；rootless 内部 `/var/jb`）。
   - [SDK/HelmCore/HelmCore.h](SDK/HelmCore/HelmCore.h) — SDK umbrella header。
-  - [SDK/HelmCore/System/HelmSystemInfo.h](SDK/HelmCore/System/HelmSystemInfo.h) / [.m](SDK/HelmCore/System/HelmSystemInfo.m) — 系统信息 + jailbreak 路径解析。`iOSMajorVersion` / `isRootless` / `isRoothide` / `jbRootPath` / `rootfs:` / `jbroot:` / `pathFor:` / `deviceModelIdentifier` / `isArm64eDevice` / `isSupportedOnCurrentIOS`。
+  - [SDK/HelmCore/System/HelmSystemInfo.h](SDK/HelmCore/System/HelmSystemInfo.h) / [.m](SDK/HelmCore/System/HelmSystemInfo.m) — 系统信息 + jailbreak 路径解析。
   - [SDK/HelmCore/Private/HelmPrivateHeaders.h](SDK/HelmCore/Private/HelmPrivateHeaders.h) — 私有 header 集中声明区（SpringBoardPrivate.h 内容搬过来了，[tools/mcp/SpringBoardPrivate.h](tools/mcp/SpringBoardPrivate.h) 现在是指向它的 shim）。
+- **新文件（step 3）**：
+  - [SDK/HelmCore/System/HelmLogger.h](SDK/HelmCore/System/HelmLogger.h) / [.m](SDK/HelmCore/System/HelmLogger.m) — 最小日志器（NSLog + `/var/mobile/Library/Logs/HelmCore/helmcore.log`），debug 开关复用 MCP prefs。
+  - [SDK/HelmCore/System/HelmScreenManager.h](SDK/HelmCore/System/HelmScreenManager.h) / [.m](SDK/HelmCore/System/HelmScreenManager.m) — 从 tools/mcp/ScreenManager 搬的，私有 SB 调用保持 NSClassFromString/NSSelectorFromString/dlsym 软引用，加了 `+isSupportedOnCurrentIOS`。
+  - [SDK/HelmCore/System/HelmOCRManager.h](SDK/HelmCore/System/HelmOCRManager.h) / [.m](SDK/HelmCore/System/HelmOCRManager.m) — 从 tools/mcp/OCRManager 搬的，Vision OCR，`+isSupportedOnCurrentIOS` 用 runtime `@available(iOS 13.0, *)` 判断（不再靠编译期分支）。
 - **构建接入**：
   - [.github/workflows/build.yml](.github/workflows/build.yml) 加了 `Build HelmCore SDK library (rootless)` 前置步骤（CI 只 build rootless，符合铁律）。
   - 主 [Makefile](Makefile) `after-stage::` 把 `HelmCore.dylib` 拷进 deb staging 的 `/usr/lib/`。
 
 ## Phase 3 剩余顺序（未动）
 
-3. 抽 `HelmScreenManager` + `HelmOCRManager`（搬 tools/mcp 实现 + 加 `+isSupportedOnCurrentIOS` + 硬编码 iOS 版本分支改 runtime `@available`）。
-4. HelmMCP 各 Manager 改成调用 HelmCore，验证行为不变。
+4. HelmMCP 各 Manager 改成调用 HelmCore（ScreenManager/OCRManager 已经是 SDK 版，把 tools/mcp 里的切过去），验证行为不变。
 5. 工具 manifest 加 `minIOS` / `maxIOS`，prefs 列表灰掉不兼容 cell。
 
 ## 上次收尾（Phase 2c，2026-07-31）
