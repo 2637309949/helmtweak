@@ -35,7 +35,7 @@
 ## 装机验证（2026-08-01 完成）
 
 - 版本 `1.0.27`，CI artifact：`HelmTweak-rootless`。
-- 部署工具：`tools/deploy/`（见下方「复现部署」）。
+- 部署工具：`scripts/`（见下方「复现部署」）。
 - **已验证**：MCP server 46 tools、截图/OCR/屏幕信息/UI 树/剪贴板/亮度/音量、Settings 面板（HelmTweak 根 + MCP 子面板 + toggle 按钮）。
 - **未验证**：真实 tap/swipe 注入（避免误操作），install_app/uninstall_app（无 IPA 在手）。下次上机可补。
 
@@ -53,29 +53,29 @@
 - `zip_winzip_aes*.c` / `zip_source_winzip_aes_*.c` 要排除（`#error "no crypto backend found"`，我们没有 crypto backend；caller 都 `#if defined(HAVE_CRYPTO)` 守好，link-safe）。
 - `zip_err_str.c` 是 CMake 生成的，源码不带 — 写了 [gen_zip_err_str.py](third_party/libzip/gen_zip_err_str.py)（Python 移植 `GenerateZipErrorStrings.cmake`）。
 - Theos `library.mk` 默认只 build dylib，要 `zip_LINKAGE_TYPE = static` 才 emit `.a`。
-- mcp-appinst 在 `tools/helpers/mcp-appsync/appinst/`（**4 层深**）→ `../../../../` 才到 repo root；mcp-roothelper / mcp-ldid 在 `tools/helpers/<name>/`（3 层深）→ `../../../`。差一层 CI 才暴露。
+- mcp-appinst 在 `tools/mcp/helpers/mcp-appsync/appinst/`（**5 层深**）→ `../../../../../` 才到 repo root；mcp-roothelper / mcp-ldid 在 `tools/mcp/helpers/<name>/`（4 层深）→ `../../../../`。差一层 CI 才暴露。
 
 ## 复现部署（下次直接跑）
 
-部署脚本在 `tools/deploy/`（gitignored 本地资产，clone 后需重建——布局见下）。手机连接信息在 repo 根 `mobile.txt`（gitignored）。
+部署脚本在 `scripts/`（gitignored 本地资产，clone 后需重建——布局见下）。手机连接信息在 repo 根 `mobile.txt`（gitignored）。
 
 ```sh
 # 1. 拉 CI artifact + 装机（用最新成功 run；gh 需要 token.txt）
-python tools/deploy/deploy.py            # 或 --deb <path.deb> 用本地 deb
-python tools/deploy/deploy.py --respring # 装完 sbreload
+python scripts/deploy.py            # 或 --deb <path.deb> 用本地 deb
+python scripts/deploy.py --respring # 装完 sbreload
 
 # 2. 验证
-python tools/deploy/verify.py            # 注入检查 + MCP probe + logreader
+python scripts/verify.py            # 注入检查 + MCP probe + logreader
 
 # 3. 诊断
-python tools/deploy/diag.py log    # 看 /var/mobile/*.log + HelmCore log
-python tools/deploy/diag.py prefs  # dump prefs bundle/plist
-python tools/deploy/diag.py ps     # 看进程
-python tools/deploy/diag.py prep   # 清日志 + kill Preferences/cfprefsd
-python tools/deploy/diag.py fetch  # 拉设备二进制到 _diag_binary/
+python scripts/diag.py log    # 看 /var/mobile/*.log + HelmCore log
+python scripts/diag.py prefs  # dump prefs bundle/plist
+python scripts/diag.py ps     # 看进程
+python scripts/diag.py prep   # 清日志 + kill Preferences/cfprefsd
+python scripts/diag.py fetch  # 拉设备二进制到 _diag_binary/
 ```
 
-`tools/deploy/` 布局（gitignored，如缺失按此重建）：
+`scripts/` 布局（gitignored，如缺失按此重建）：
 - `device.py` — 手机连接共享模块，从 `mobile.txt` 读 `HOST/USER/PW`，暴露 `connect()` / `run(c,cmd)`。
 - `deploy.py` — artifact 拉取 + SFTP 上传 + `dpkg -i`（含 `--force-depends` fallback）+ 产物列表 + MCP probe。
 - `verify.py` — `launchctl procinfo` 注入检查 + mcp-logreader 冒烟 + MCP probe。
@@ -88,8 +88,8 @@ python tools/deploy/diag.py fetch  # 拉设备二进制到 _diag_binary/
 | 文件 | 内容 |
 |---|---|
 | `token.txt` | GitHub fine-grained PAT（`gh` CLI 用它） |
-| `mobile.txt` | 手机连接信息：`HOST/USER/PW`（`tools/deploy/device.py` 读取） |
-| `tools/deploy/` | 本地部署脚本（gitignored，clone 后按上文布局重建） |
+| `mobile.txt` | 手机连接信息：`HOST/USER/PW`（`scripts/device.py` 读取） |
+| `scripts/` | 本地部署脚本（gitignored，clone 后按上文布局重建） |
 | `_diag_binary/` | 反编译产物 |
 | `packages/` | 本机 build 的 deb |
 

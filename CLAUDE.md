@@ -14,6 +14,13 @@ Project memory for fast pickup. Read this before touching the build.
 - Target devices: A12–A17 (iPhone XS → iPhone 13 Pro Max). Fat **arm64 + arm64e**.
 - **NOT** the future `Helm` MCP-smart-terminal project. They share only a naming stem. This repo = `HelmTweak`; the MCP terminal = a separate `helm` repo. Don't conflate.
 
+## Directory layering (新文件别放错层)
+
+- `SDK/HelmCore/` = **SDK 层**（跨应用复用 dylib + 私有 header 集中声明）。
+- `tools/` = **应用层**。目前只有 `tools/mcp/`（用户可用的 MCP 工具）和其内部 `tools/mcp/helpers/`（MCP 的后端 CLI，不暴露给用户）。
+- `scripts/` = **开发工具链**（部署/验证/诊断，不进 deb）。不参与打包。
+- **新增规则**：用户可见的"工具"只能出现在 MCP 的 tools 里；CLI helper 一律放 `tools/mcp/helpers/`；部署/诊断脚本放 `scripts/`；跨应用能力放 `SDK/HelmCore/`。
+
 ## Build & run
 
 - Build system: **Theos** (`make`). Requires the iPhoneOS SDK (CI installs 16.5 via theos-action).
@@ -23,12 +30,13 @@ Project memory for fast pickup. Read this before touching the build.
 
 ## Deploy to phone (装机)
 
-- Phone: root SSH. **Connection info lives in `mobile.txt`** (gitignored, never commit): `HOST=…`, `USER=root`, `PW=…`. Defaults in `tools/deploy/device.py`: `HOST=172.20.10.6 root/12345`.
-- Deploy scripts are in `tools/deploy/` (gitignored local assets; if missing after clone, re-create from the layout in PROGRESS.md):
-  - `python tools/deploy/deploy.py` — pull latest CI artifact (needs `gh` + `token.txt`) OR `--deb <path>` to use a local deb; upload via SFTP, `dpkg -i` (with `--force-depends` fallback), list bundled binaries, probe MCP `:8686`; `--respring` to `sbreload` after install.
-  - `python tools/deploy/verify.py` — check dylib injection (`launchctl procinfo` on SpringBoard/installd/backboardd), mcp-logreader smoke run, MCP probe.
-  - `python tools/deploy/diag.py <log|prefs|ps|prep|fetch>` — read `/var/mobile/*.log` + `HelmCore/helmcore.log`, dump prefs bundle/plist, list processes, clear logs + `killall Preferences/cfprefsd`, fetch device binary.
-- All deploy scripts read phone info from `mobile.txt` via `tools/deploy/device.py` — no hardcoded IP/pw in scripts.
+- Phone: root SSH. **Connection info lives in `mobile.txt`** (gitignored, never commit): `HOST=…`, `USER=root`, `PW=…`. `scripts/device.py` 读取（缺失即报错，无默认密码）。
+- Deploy scripts are in `scripts/`（已纳入 git；`mobile.txt` 和 `scripts/_artifact|_shots|__pycache__` gitignored）:
+  - `python scripts/deploy.py` — pull latest CI artifact (needs `gh` + `token.txt`) OR `--deb <path>` to use a local deb; upload via SFTP, `dpkg -i` (with `--force-depends` fallback), list bundled binaries, probe MCP `:8686`; `--respring` to `sbreload` after install.
+  - `python scripts/verify.py` — check dylib injection (`launchctl procinfo` on SpringBoard/installd/backboardd), mcp-logreader smoke run, MCP probe.
+  - `python scripts/diag.py <log|prefs|ps|prep|fetch>` — read `/var/mobile/*.log` + `HelmCore/helmcore.log`, dump prefs bundle/plist, list processes, clear logs + `killall Preferences/cfprefsd`, fetch device binary.
+  - `python scripts/mcp.py tools/call --name <tool> [--args '{"k":v}']` — 直接调手机 MCP server 工具（截图/OCR/UI 树等），图片存 `scripts/_shots/`。
+- All deploy scripts read phone info from `mobile.txt` via `scripts/device.py` — no hardcoded IP/pw in scripts.
 
 ## File map
 
@@ -37,9 +45,11 @@ Project memory for fast pickup. Read this before touching the build.
 - [HelmTweak.plist](HelmTweak.plist) — **filter plist**, `Filter.Bundles = [com.apple.springboard]`. Name MUST equal `TWEAK_NAME`.
 - [control](control) — `Package: com.example.helmtweak`, `Architecture: iphoneos-arm64` (rootless fixed field), `Depends: mobilesubstrate`. **Filename is lowercase `control`** (see gotchas).
 - [entitlements.plist](entitlements.plist) — `no-sandbox`, `no-container`, `platform-application`. Embedded via `*_ENTITLEMENTS`.
-- [.github/workflows/build.yml](.github/workflows/build.yml) — macos-latest, `Randomblock1/theos-action@v1` for env+SDK, helper pre-build step (`make` in each `tools/helpers/<name>/`), then `make clean && make package` at root, then `upload-artifact` of `packages/*.deb`. **Only builds rootless** (theos-action doesn't ship libroothide).
-- [tools/mcp/](tools/mcp/) — HelmMCP dylib source（forked from `witchan/ios-mcp`, GPL-3.0）: Tweak.x / MCPServer / 各 Manager / 私有 header / `roothide_shim.h` (rootless 下提供 `rootfs()`/`jbroot()` fallback) / `IOSMCPPreferences.h` (默认端口 8686)。
-- [tools/helpers/](tools/helpers/) — 通用 CLI helpers 子项目（每个自己 Makefile，scheme 自适应）：`mcp-logreader/` (连 diagnosticd 拿 unified log，rootless + roothide 都 build)、`mcp-root/` (setuid root 命令白名单，只 roothide build + chmod 4755)。`README.md` 列出 Phase 2c 后续要 fork 的 helper（mcp-roothelper / mcp-appsync / mcp-ldid）+ 各自卡点。
+- [.github/workflows/build.yml](.github/workflows/build.yml) — macos-latest, `Randomblock1/theos-action@v1` for env+SDK, helper pre-build step (`make` in each `tools/mcp/helpers/<name>/`), then `make clean && make package` at root, then `upload-artifact` of `packages/*.deb`. **Only builds rootless** (theos-action doesn't ship libroothide).
+- [tools/mcp/](tools/mcp/) — **应用层**。HelmMCP dylib source（forked from `witchan/ios-mcp`, GPL-3.0）: Tweak.x / MCPServer / 各 Manager / 私有 header / `roothide_shim.h` (rootless 下提供 `rootfs()`/`jbroot()` fallback) / `IOSMCPPreferences.h` (默认端口 8686)。**用户可用的"工具"就是这里的 MCP**。
+- [tools/mcp/helpers/](tools/mcp/helpers/) — **MCP 内部 CLI 工具**（不暴露给用户，被 MCP server 调用）：每个自己 Makefile，scheme 自适应。`mcp-logreader/` (连 diagnosticd 拿 unified log，rootless + roothide 都 build)、`mcp-root/` (setuid root 命令白名单，只 roothide build + chmod 4755)、`mcp-roothelper/`、`mcp-ldid/`、`mcp-appsync/`。`README.md` 列出 Phase 2c 后续要 fork 的 helper + 各自卡点。
+- [SDK/HelmCore/](SDK/HelmCore/) — **SDK 层**（跨应用复用的 dylib）。私有 header 集中声明 + HelmSystemInfo（路径/版本/scheme）+ Screen/OCR/HID 等 Manager。应用层（tools/*）只经 HelmCore 高层 API 接触系统能力。
+- [scripts/](scripts/) — **开发工具链**（部署/验证/诊断/MCP 客户端），不参与打包。
 - [HelmTweakPrefs.mm](HelmTweakPrefs.mm) — PreferenceBundle binary; `PSListController` subclass, override `specifiers` with `[self loadSpecifiersFromPlistName:@"Root" target:self]` (see gotchas — two-arg form is load-bearing).
 - [MCPPrefsListController.mm](MCPPrefsListController.mm) — MCP 子面板 controller。PSButtonCell + `[spec setName:]` + `[self reload]` 刷新 button title（见 gotchas）。
 - [HelmTweakPrefs/Info.plist](HelmTweakPrefs/Info.plist) — bundle metadata, `CFBundleIdentifier = com.example.helmtweakprefs`, `NSPrincipalClass = HelmTweakPrefsListController`. The whole `HelmTweakPrefs/` folder is the bundle resource dir (mapped via `HelmTweakPrefs_RESOURCE_DIRS` in Makefile).

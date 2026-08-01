@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # 部署 HelmTweak deb 到越狱手机：从 CI artifact（或本地路径）上传 + dpkg -i + 验证。
 # 用法:
-#   python tools/deploy/deploy.py                    # 用 CI 最新 artifact
-#   python tools/deploy/deploy.py --deb <path.deb>   # 用本地 deb
+#   python scripts/deploy.py                    # 用 CI 最新 artifact
+#   python scripts/deploy.py --deb <path.deb>   # 用本地 deb
 # 手机信息读 repo 根 mobile.txt（gitignore），缺省 HOST=172.20.10.6 root/12345
 import argparse
 import json
@@ -23,7 +23,7 @@ def fetch_latest_artifact(dest_dir):
     os.makedirs(dest_dir, exist_ok=True)
     # 找最新一次成功 run 的 id
     import subprocess
-    token_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "token.txt")
+    token_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "token.txt")
     env = dict(os.environ)
     if os.path.exists(token_file):
         env["GH_TOKEN"] = open(token_file, "r", encoding="utf-8").read().strip()

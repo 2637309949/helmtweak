@@ -5,7 +5,7 @@
 import os
 import paramiko
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "mobile.txt")
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "mobile.txt")
 
 
 def _load_config():

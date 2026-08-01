@@ -1,8 +1,7 @@
 // HelmTweakPrefs — PreferenceBundle for Settings.app
-// Settings 根入口。工具箱列表静态定义在 Root.plist（含灰化状态/label），
+// Settings 根入口，面板只放 MCP 一个工具入口（用户可见的"工具"就是 MCP）。
 // 不动态构造或修改 PSSpecifier —— 私有 API 在 iOS 15+ 触发 forwarding 崩溃
-// （2026-08-01 两次 Settings 闪退已证实）。如需按系统版本动态灰化，
-// 用 plist 静态 isEnabled + 固定 label 标注（当前目标设备均满足 minIOS）。
+// （2026-08-01 两次 Settings 闪退已证实）。
 
 #import <Preferences/Preferences.h>
 

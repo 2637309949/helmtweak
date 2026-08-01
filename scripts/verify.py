@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # 装机验证：检查 dylib 注入 + MCP server + helpers。
-#   python tools/deploy/verify.py
-#   python tools/deploy/verify.py --probe-only
+#   python scripts/verify.py
+#   python scripts/verify.py --probe-only
 import argparse
 import json
 import os

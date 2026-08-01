@@ -8,10 +8,10 @@ token.txt
 _diag_binary/
 *.log
 
-# deploy 工具产物（脚本本身纳入 git，产物不提交）
-tools/deploy/_artifact/
-tools/deploy/_shots/
-tools/deploy/__pycache__/
+# 开发脚本产物（脚本本身纳入 git，产物不提交）
+scripts/_artifact/
+scripts/_shots/
+scripts/__pycache__/
 
 # Theos 构建产物
 obj/

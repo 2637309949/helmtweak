@@ -45,12 +45,12 @@ jobs:
           (cd third_party/libzip && make clean && make THEOS_PACKAGE_SCHEME=rootless) || exit 1
           for h in mcp-logreader mcp-root mcp-ldid; do
             echo "==> building $h"
-            (cd tools/helpers/$h && make clean && make THEOS_PACKAGE_SCHEME=rootless) || exit 1
+            (cd tools/mcp/helpers/$h && make clean && make THEOS_PACKAGE_SCHEME=rootless) || exit 1
           done
           echo "==> building mcp-appsync aggregate (AppSync dylibs)"
-          (cd tools/helpers/mcp-appsync && make clean && make THEOS_PACKAGE_SCHEME=rootless) || exit 1
+          (cd tools/mcp/helpers/mcp-appsync && make clean && make THEOS_PACKAGE_SCHEME=rootless) || exit 1
           echo "==> building mcp-appsync/appinst CLI (uses vendored libzip.a)"
-          (cd tools/helpers/mcp-appsync/appinst && make clean && make THEOS_PACKAGE_SCHEME=rootless) || exit 1
+          (cd tools/mcp/helpers/mcp-appsync/appinst && make clean && make THEOS_PACKAGE_SCHEME=rootless) || exit 1
 
       - name: Build package
         run: make clean && make package

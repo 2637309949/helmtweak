@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # MCP server 客户端 helper：调 tools/call / tools/list，带 base64 图片解码到本地。
 # 用法:
-#   python tools/deploy/mcp.py tools/list
-#   python tools/deploy/mcp.py tools/call --name screenshot
-#   python tools/deploy/mcp.py tools/call --name tap_screen --args '{"x":100,"y":100}'
-#   python tools/deploy/mcp.py tools/call --name ocr_screen
+#   python scripts/mcp.py tools/list
+#   python scripts/mcp.py tools/call --name screenshot
+#   python scripts/mcp.py tools/call --name tap_screen --args '{"x":100,"y":100}'
+#   python scripts/mcp.py tools/call --name ocr_screen
 import argparse
 import base64
 import json

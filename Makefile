@@ -15,7 +15,7 @@ HelmTweak_FRAMEWORKS = Foundation UIKit
 HelmTweak_ENTITLEMENTS = entitlements.plist
 
 # ===== HelmMCP — forked from witchan/ios-mcp (GPL-3.0), core dylib only =====
-# Helpers (mcp-root/mcp-ldid/mcp-logreader/AppSync/mcp-roothelper) 见 tools/helpers/
+# Helpers (mcp-root/mcp-ldid/mcp-logreader/AppSync/mcp-roothelper) 见 tools/mcp/helpers/
 HelmMCP_FILES = tools/mcp/Tweak.x tools/mcp/MCPServer.m tools/mcp/MCPLogger.m \
                 tools/mcp/ClipboardManager.m \
                 tools/mcp/FileSystemManager.m tools/mcp/LogManager.m
@@ -53,7 +53,7 @@ include $(THEOS_MAKE_PATH)/bundle.mk
 # after-stage 把 build 好的 binary 拷进 staging，按 scheme 决定哪些 helper 进。
 # - rootless: mcp-logreader + mcp-ldid + mcp-appsync (dylibs + appinst CLI，靠 vendored libzip)
 # - roothide: 上面全部 + mcp-root (setuid) + mcp-roothelper (setuid)
-HELPERS_DIR := $(THEOS_PROJECT_DIR)/tools/helpers
+HELPERS_DIR := $(THEOS_PROJECT_DIR)/tools/mcp/helpers
 MSDYNLIB_DIR = $(THEOS_STAGING_DIR)/Library/MobileSubstrate/DynamicLibraries
 
 after-stage::

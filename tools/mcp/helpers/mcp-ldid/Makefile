@@ -12,11 +12,11 @@ include $(THEOS)/makefiles/common.mk
 
 TOOL_NAME = mcp-ldid
 
-MCP_LDID_SOURCE_DIR := $(CURDIR)/../../../third_party/ldid
-MCP_LDID_VENDOR_DIR := $(CURDIR)/../../../third_party/procursus-sdk/iphoneos-arm64
+MCP_LDID_SOURCE_DIR := $(CURDIR)/../../../../third_party/ldid
+MCP_LDID_VENDOR_DIR := $(CURDIR)/../../../../third_party/procursus-sdk/iphoneos-arm64
 MCP_LDID_VERSION := $(shell cd "$(MCP_LDID_SOURCE_DIR)" && git rev-parse --short HEAD 2>/dev/null || printf 'vendored')
 
-mcp-ldid_FILES = ../../../third_party/ldid/ldid.cpp
+mcp-ldid_FILES = ../../../../third_party/ldid/ldid.cpp
 mcp-ldid_CFLAGS += -I$(MCP_LDID_SOURCE_DIR) -I$(MCP_LDID_VENDOR_DIR)/usr/include -fvisibility=hidden -Wno-vla-cxx-extension -Wno-unused-but-set-variable -Wno-unused-function -Wno-nonnull -Wno-error=nonnull
 mcp-ldid_CCFLAGS += -std=c++11 -stdlib=libc++ -I$(MCP_LDID_SOURCE_DIR) -I$(MCP_LDID_VENDOR_DIR)/usr/include -fvisibility=hidden -Wno-vla-cxx-extension -Wno-unused-but-set-variable -Wno-unused-function -Wno-nonnull -Wno-error=nonnull -DLDID_VERSION=\"$(MCP_LDID_VERSION)\"
 mcp-ldid_LDFLAGS += $(MCP_LDID_VENDOR_DIR)/usr/lib/libcrypto.a $(MCP_LDID_VENDOR_DIR)/usr/lib/libplist-2.0.a

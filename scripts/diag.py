@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # 诊断工具：日志、prefs bundle、进程、拉取设备二进制。
-#   python tools/deploy/diag.py log              # 看 /var/mobile/*.log
-#   python tools/deploy/diag.py prefs            # dump prefs bundle + plist
-#   python tools/deploy/diag.py ps               # 看关键进程
-#   python tools/deploy/diag.py prep             # 清日志 + kill Settings/cfprefsd
-#   python tools/deploy/diag.py fetch --out DIR  # 拉 HelmTweakPrefs 二进制
+#   python scripts/diag.py log              # 看 /var/mobile/*.log
+#   python scripts/diag.py prefs            # dump prefs bundle + plist
+#   python scripts/diag.py ps               # 看关键进程
+#   python scripts/diag.py prep             # 清日志 + kill Settings/cfprefsd
+#   python scripts/diag.py fetch --out DIR  # 拉 HelmTweakPrefs 二进制
 import argparse
 import os
 import sys
