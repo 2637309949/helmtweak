@@ -136,4 +136,35 @@
     });
 }
 
+- (void)clearLogs:(PSSpecifier *)spec {
+    // 清日志文件（不依赖 MCPLogger 类，Settings 进程没有它）。
+    // 清 iOSMCP + HelmCore 两个日志目录。
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSArray<NSString *> *dirs = @[
+        @"/var/mobile/Library/Logs/iOSMCP",
+        @"/var/mobile/Library/Logs/HelmCore",
+    ];
+
+    BOOL allCleared = YES;
+    NSString *lastError = nil;
+    for (NSString *dir in dirs) {
+        NSArray<NSString *> *files = [fm contentsOfDirectoryAtPath:dir error:nil];
+        for (NSString *file in files) {
+            if (![file hasSuffix:@".log"]) continue;
+            NSError *e = nil;
+            if (![fm removeItemAtPath:[dir stringByAppendingPathComponent:file] error:&e]) {
+                allCleared = NO;
+                if (!lastError) lastError = e.localizedDescription;
+            }
+        }
+    }
+
+    NSString *message = allCleared ? @"已清空" : [@"清空失败: " stringByAppendingString:lastError ?: @"未知错误"];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"清空日志"
+                                                                   message:message
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
 @end
