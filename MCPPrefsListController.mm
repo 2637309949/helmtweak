@@ -150,23 +150,67 @@
 }
 
 - (void)toggleServer:(PSSpecifier *)spec {
-    BOOL shouldStart = !self.serverRunning;
-    [self writeEnabledPref:shouldStart];
+    // 期望方向由点击时按钮 label 决定：
+    //   "启动服务" -> 期望启动；"关闭服务" -> 期望关闭。
+    // 点击后先"检测中..."，探测实际状态，与期望方向对齐后再操作，避免
+    // 界面不同步时盲目重复启动/停止。
+    NSString *currentName = [spec name];
+    BOOL wantStart = YES;
+    if ([currentName isEqualToString:@"关闭服务"]) {
+        wantStart = NO;
+    } else if ([currentName isEqualToString:@"检测中..."] ||
+               [currentName isEqualToString:@"启动中..."] ||
+               [currentName isEqualToString:@"关闭中..."]) {
+        // 处于过渡态时以最后已知状态取反作为期望
+        wantStart = !self.serverRunning;
+    }
 
-    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-                                        shouldStart ? CFSTR("com.witchan.ios-mcp.control/start")
-                                                    : CFSTR("com.witchan.ios-mcp.control/stop"),
-                                        NULL, NULL, true);
-
-    [spec setName:shouldStart ? @"启动中..." : @"关闭中..."];
+    [spec setName:@"检测中..."];
     [self reload];
 
-    // 等 1.5s 让 dylib 起/停 server，再 probe 实际状态刷新 label
     __weak typeof(self) weakSelf = self;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         __strong typeof(weakSelf) self = weakSelf;
-        if (self) [self refreshServerStatus];
+        if (!self) return;
+        BOOL isUp = [self probeMCPServerOnPort:[self configuredPort]];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            __strong typeof(weakSelf) self = weakSelf;
+            if (!self) return;
+
+            if (isUp == wantStart) {
+                // 实际状态已符合期望方向，无需操作，只纠正 label。
+                self.serverRunning = isUp;
+                [self writeEnabledPref:isUp];
+                PSSpecifier *s = [self specifierForID:@"mcpToggleButton"];
+                if (s) {
+                    [s setName:isUp ? @"关闭服务" : @"启动服务"];
+                    [self reload];
+                }
+                return;
+            }
+
+            // 状态不符合期望，发对应通知。
+            [self writeEnabledPref:wantStart];
+            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                                wantStart ? CFSTR("com.witchan.ios-mcp.control/start")
+                                                          : CFSTR("com.witchan.ios-mcp.control/stop"),
+                                                NULL, NULL, true);
+
+            PSSpecifier *s = [self specifierForID:@"mcpToggleButton"];
+            if (s) {
+                [s setName:wantStart ? @"启动中..." : @"关闭中..."];
+                [self reload];
+            }
+
+            // 等 1.5s 让 dylib 起/停 server，再 probe 实际状态刷新 label
+            __weak typeof(self) weakSelf2 = self;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                __strong typeof(weakSelf2) self = weakSelf2;
+                if (self) [self refreshServerStatus];
+            });
+        });
     });
 }
 
