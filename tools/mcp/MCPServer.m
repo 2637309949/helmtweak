@@ -1,6 +1,6 @@
 #import "MCPServer.h"
 #import "HIDManager.h"
-#import <HelmCore/HelmScreenManager.h>
+#import <HelmCore/HelmCore.h>
 #import "ClipboardManager.h"
 #import "AppManager.h"
 #import "AccessibilityManager.h"
@@ -8,7 +8,6 @@
 #import "TextInputManager.h"
 #import "FileSystemManager.h"
 #import "LogManager.h"
-#import <HelmCore/HelmOCRManager.h>
 #import "MCPLogger.h"
 #import "IOSMCPPreferences.h"
 #import <UIKit/UIKit.h>
