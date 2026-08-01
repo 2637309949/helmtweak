@@ -10,6 +10,9 @@
 
 #import <Preferences/Preferences.h>
 #import <CoreFoundation/CoreFoundation.h>
+#import <sys/socket.h>
+#import <netinet/in.h>
+#import <arpa/inet.h>
 
 @interface PSListController (HelmTweakPrivate)
 - (NSMutableArray *)loadSpecifiersFromPlistName:(NSString *)name target:(id)target;
@@ -57,32 +60,26 @@
 }
 
 - (BOOL)probeMCPServerOnPort:(uint16_t)port {
-    NSString *urlStr = [NSString stringWithFormat:@"http://127.0.0.1:%u/mcp", (unsigned)port];
-    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:urlStr]];
-    req.HTTPMethod = @"POST";
-    [req setTimeoutInterval:1.0];
-    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    req.HTTPBody = [@"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}" dataUsingEncoding:NSUTF8StringEncoding];
+    // 用 BSD socket 直接测 TCP 连接，不经过 NSURLSession/ATS。
+    // NSURLSession 在 Settings 进程里对 http://127.0.0.1 可能被 ATS 拦，导致误判 server 没起。
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) return NO;
 
-    __block BOOL isUp = NO;
-    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
-    NSURLSessionConfiguration *cfg = [NSURLSessionConfiguration ephemeralSessionConfiguration];
-    cfg.timeoutIntervalForRequest = 1.0;
-    cfg.timeoutIntervalForResource = 1.0;
-    NSURLSession *session = [NSURLSession sessionWithConfiguration:cfg];
-    [[session dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
-        (void)err;
-        if (data && [resp isKindOfClass:[NSHTTPURLResponse class]] && [(NSHTTPURLResponse *)resp statusCode] == 200) {
-            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-            if ([json isKindOfClass:[NSDictionary class]] && [json[@"jsonrpc"] isEqualToString:@"2.0"]) {
-                isUp = YES;
-            }
-        }
-        dispatch_semaphore_signal(sem);
-    }] resume];
-    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.2 * NSEC_PER_SEC)));
-    [session invalidateAndCancel];
-    return isUp;
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 500 * 1000;
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+
+    int rc = connect(fd, (struct sockaddr *)&addr, sizeof(addr));
+    close(fd);
+    return rc == 0;
 }
 
 - (void)writeEnabledPref:(BOOL)on {
