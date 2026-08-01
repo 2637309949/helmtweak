@@ -41,7 +41,9 @@
 
 ## 自动化 UI 操作经验（MCP 控制 Settings）
 
-- **Settings 列表滚动一次一屏**（约 300 点），**不要连滚到底**——连滚会滑过目标（如 HelmTweak 入口）。逐屏滚 + 每次 OCR/UI 树检查。
+- **优先用 [scripts/ui_test.py](scripts/ui_test.py)**，不要每次新建临时脚本：
+  - `open-settings` / `scroll up|down N` / `find <text>` / `tap x y` / `ui` / `ocr` / `frontmost` / `mcp-up`
+- **Settings 列表滚动一次一屏**（约 300 点），**不要连滚到底**——连滚会滑过目标（如 HelmTweak 入口）。逐屏滚 + 每次检查。
 - **OCR 中文识别弱**：中文按钮文案（启动服务/服务开关）常乱码，用 `get_ui_elements` 拿结构化 label 更可靠。
 - **`get_ui_elements` 偶发超时**（AX inactive），重试 2-3 次可恢复。
 - **tap 坐标**：OCR/UI 树返回的 tap 点可直接用；点 cell 时可 +6 点略偏下命中整行。

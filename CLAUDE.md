@@ -37,6 +37,7 @@ Project memory for fast pickup. Read this before touching the build.
   - `python scripts/verify.py` — check dylib injection (`launchctl procinfo` on SpringBoard/installd/backboardd), mcp-logreader smoke run, MCP probe.
   - `python scripts/diag.py <log|prefs|ps|prep|fetch>` — read `/var/mobile/*.log` + `HelmCore/helmcore.log`, dump prefs bundle/plist, list processes, clear logs + `killall Preferences/cfprefsd`, fetch device binary.
   - `python scripts/mcp.py tools/call --name <tool> [--args '{"k":v}']` — 直接调手机 MCP server 工具（截图/OCR/UI 树等），图片存 `scripts/_shots/`。
+  - `python scripts/ui_test.py <open-settings|scroll|find|tap|ui|ocr|frontmost|mcp-up>` — Settings 界面自动化测试（走 MCP），**UI 操作优先用它，不要每次新建临时脚本**。
 - All deploy scripts read phone info from `mobile.txt` via `scripts/device.py` — no hardcoded IP/pw in scripts.
 
 ## File map
