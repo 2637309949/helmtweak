@@ -2,6 +2,7 @@
 
 @interface AppManager : NSObject
 
++ (BOOL)isSupportedOnCurrentIOS;
 + (instancetype)sharedInstance;
 
 /// Launch app by bundle ID (brings to foreground if already running)

@@ -1,18 +1,13 @@
 #import "AppManager.h"
 #import "AccessibilityManager.h"
 #import "MCPProcessUtil.h"
-#import "SpringBoardPrivate.h"
-#ifdef MCP_ROOTHIDE
-#include <roothide.h>
-#else
-#import "roothide_shim.h"
-#endif
+#import "HelmSystemInfo.h"
+#import "../Private/HelmPrivateHeaders.h"
 #import <Security/Security.h>
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
-#import "IOSMCPPreferences.h"
-#import "MCPLogger.h"
+#import "HelmLogger.h"
 #import <fcntl.h>
 #import <spawn.h>
 #import <string.h>
@@ -42,10 +37,10 @@ extern CFStringRef kSecCodeInfoEntitlementsDict;
 @end
 
 #define APP_LOG(fmt, ...) do { \
-    if ([MCPLogger isDebugLoggingEnabled]) { \
+    if ([HelmLogger isDebugLoggingEnabled]) { \
         NSString *_iosmcp_log = [NSString stringWithFormat:(@"[App] " fmt), ##__VA_ARGS__]; \
         NSLog(@"[witchan][ios-mcp]%@", _iosmcp_log); \
-        [MCPLogger logMessage:_iosmcp_log]; \
+        [HelmLogger logMessage:_iosmcp_log]; \
     } \
 } while (0)
 
@@ -298,7 +293,7 @@ static NSString *MCPShellQuote(NSString *string) {
 
 static NSString *MCPConfiguredSudoPassword(void) {
     CFPropertyListRef value = CFPreferencesCopyAppValue(CFSTR("sudo_password"),
-                                                        (__bridge CFStringRef)IOS_MCP_PREFERENCES_DOMAIN);
+                                                        CFSTR("com.witchan.ios-mcp.preferences"));
     if (value && CFGetTypeID(value) == CFStringGetTypeID()) {
         NSString *password = [(__bridge NSString *)value copy];
         CFRelease(value);
@@ -316,21 +311,21 @@ static NSString *MCPDpkgBootstrapPathForDeb(NSString *path) {
         return path ?: @"";
     }
 
-#ifdef MCP_ROOTHIDE
+#if defined(HELM_CORE_ROOTHIDE)
     NSFileManager *fm = [NSFileManager defaultManager];
 
-    NSString *systemPathFromBootstrap = jbroot(path);
+    NSString *systemPathFromBootstrap = [HelmSystemInfo jbroot:path];
     if (systemPathFromBootstrap.length > 0 &&
         [fm fileExistsAtPath:systemPathFromBootstrap]) {
         return path;
     }
 
     if ([fm fileExistsAtPath:path]) {
-        NSString *bootstrapPath = rootfs(path);
+        NSString *bootstrapPath = [HelmSystemInfo rootfs:path];
         return bootstrapPath.length > 0 ? bootstrapPath : path;
     }
 
-    NSString *bootstrapPath = rootfs(path);
+    NSString *bootstrapPath = [HelmSystemInfo rootfs:path];
     return bootstrapPath.length > 0 ? bootstrapPath : path;
 #else
     return path;
@@ -652,7 +647,7 @@ static NSString *MCPStageDebForDpkg(NSString *debPath, NSString **stagedPath, NS
 
 static NSString *MCPBootstrapArgumentPath(NSString *path) {
     if (path.length == 0) return path ?: @"";
-    NSString *converted = rootfs(path);
+    NSString *converted = [HelmSystemInfo rootfs:path];
     return converted.length > 0 ? converted : path;
 }
 
@@ -745,6 +740,10 @@ static BOOL MCPWaitForURLOpenVerification(NSURL *url, NSString *previousBundleId
 }
 
 @implementation AppManager
+
++ (BOOL)isSupportedOnCurrentIOS {
+    return YES;
+}
 
 + (instancetype)sharedInstance {
     static AppManager *instance;
@@ -1714,7 +1713,7 @@ static BOOL MCPWaitForURLOpenVerification(NSURL *url, NSString *previousBundleId
             entitlementsToUse = [NSMutableDictionary dictionary];
         }
 
-#ifdef MCP_ROOTHIDE
+#ifdef HELM_CORE_ROOTHIDE
         entitlementsToUse[@"jb.pmap_cs.custom_trust"] = @"PMAP_CS_APP_STORE";
 #endif
 
@@ -1889,7 +1888,7 @@ static BOOL MCPWaitForURLOpenVerification(NSURL *url, NSString *previousBundleId
     NSString *ipaPath = packagePath;
     NSString *ipaBundleId = [self bundleIdFromIPA:ipaPath];
 
-#ifdef MCP_ROOTHIDE
+#ifdef HELM_CORE_ROOTHIDE
     NSString *mcpRootPath = MCPResolvedJailbreakPath(@"/usr/bin/mcp-root");
     BOOL canUseMcpRoot = [fm isExecutableFileAtPath:mcpRootPath];
     NSString *rootHelperPath = MCPResolvedJailbreakPath(@"/usr/bin/mcp-roothelper");
@@ -1928,14 +1927,14 @@ static BOOL MCPWaitForURLOpenVerification(NSURL *url, NSString *previousBundleId
     if ([fm fileExistsAtPath:appinstPath]) {
         NSString *launchPath = appinstPath;
         NSArray<NSString *> *arguments = @[ipaPath];
-#ifdef MCP_ROOTHIDE
+#ifdef HELM_CORE_ROOTHIDE
         if (canUseMcpRoot) {
             launchPath = mcpRootPath;
             arguments = @[@"/usr/bin/mcp-appinst", ipaPath];
         }
 #endif
         APP_LOG(@"Installing via %s%s: %@",
-#ifdef MCP_ROOTHIDE
+#ifdef HELM_CORE_ROOTHIDE
                 (launchPath == mcpRootPath) ? "mcp-root -> " :
 #endif
                 "",
@@ -1954,7 +1953,7 @@ static BOOL MCPWaitForURLOpenVerification(NSURL *url, NSString *previousBundleId
                                       &spawnError);
         if (finished && exitCode == 0) {
             APP_LOG(@"mcp-appinst succeeded outputBytes=%lu", (unsigned long)MCPAppLogUTF8Length(output));
-#ifndef MCP_ROOTHIDE
+#ifndef HELM_CORE_ROOTHIDE
             NSString *bundleId = ipaBundleId.length > 0 ? ipaBundleId : [self bundleIdFromAppInstOutput:output];
             [self retryFakesignInstalledAppForBundleId:bundleId installedAfter:installStartedAt];
 #endif
@@ -2046,7 +2045,7 @@ static BOOL MCPWaitForURLOpenVerification(NSURL *url, NSString *previousBundleId
 }
 
 - (NSString *)bundleIdFromIPA:(NSString *)ipaPath {
-#ifdef MCP_ROOTHIDE
+#ifdef HELM_CORE_ROOTHIDE
     NSString *rootHelperPath = MCPResolvedJailbreakPath(@"/usr/bin/mcp-roothelper");
     if ([[NSFileManager defaultManager] isExecutableFileAtPath:rootHelperPath]) {
         NSString *output = nil;

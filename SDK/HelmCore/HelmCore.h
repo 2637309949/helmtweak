@@ -9,5 +9,9 @@
 #import <HelmCore/System/HelmScreenManager.h>
 #import <HelmCore/System/HelmOCRManager.h>
 #import <HelmCore/System/HelmHIDManager.h>
+#import <HelmCore/System/MCPProcessUtil.h>
+#import <HelmCore/System/AppManager.h>
+#import <HelmCore/System/AccessibilityManager.h>
+#import <HelmCore/System/TextInputManager.h>
 
 #endif

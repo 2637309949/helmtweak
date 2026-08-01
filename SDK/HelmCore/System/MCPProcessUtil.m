@@ -1,5 +1,5 @@
 #import "MCPProcessUtil.h"
-#import <HelmCore/HelmCore.h>
+#import "HelmSystemInfo.h"
 #import <dispatch/dispatch.h>
 #import <errno.h>
 #import <fcntl.h>

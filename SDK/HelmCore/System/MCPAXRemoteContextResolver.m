@@ -1,6 +1,6 @@
 #import "MCPAXRemoteContextResolver.h"
 #import "MCPAXQueryContext.h"
-#import "SpringBoardPrivate.h"
+#import "../Private/HelmPrivateHeaders.h"
 #import <UIKit/UIKit.h>
 #import <dispatch/dispatch.h>
 #import <mach-o/dyld.h>

@@ -1,6 +1,6 @@
 #import <Foundation/Foundation.h>
 #import <CoreGraphics/CoreGraphics.h>
-#import "AXPrivate.h"
+#import "../Private/AXPrivate.h"
 
 NS_ASSUME_NONNULL_BEGIN
 

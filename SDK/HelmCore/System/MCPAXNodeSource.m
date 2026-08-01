@@ -1,16 +1,17 @@
 #import "MCPAXNodeSource.h"
 #import "MCPAXAttributeBridge.h"
-#import "AXPrivate.h"
+#import "HelmSystemInfo.h"
+#import "../Private/AXPrivate.h"
 #import <UIKit/UIKit.h>
 #import <objc/message.h>
 #import <dlfcn.h>
-#import "MCPLogger.h"
+#import "HelmLogger.h"
 
 #define MCP_AX_NODE_LOG(fmt, ...) do { \
-    if ([MCPLogger isDebugLoggingEnabled]) { \
+    if ([HelmLogger isDebugLoggingEnabled]) { \
         NSString *_iosmcp_log = [NSString stringWithFormat:(@"[AXNodeSource] " fmt), ##__VA_ARGS__]; \
         NSLog(@"[witchan][ios-mcp]%@", _iosmcp_log); \
-        [MCPLogger logMessage:_iosmcp_log]; \
+        [HelmLogger logMessage:_iosmcp_log]; \
     } \
 } while (0)
 
@@ -124,7 +125,7 @@ static NSString *MCPAXNodePipelineProbeTruncatedDescription(id value) {
         description = nil;
     }
     if (description.length > 240) {
-        return [[description substringToIndex:240] stringByAppendingString:@"…"];
+        return [[description substringToIndex:240] stringByAppendingString:@"�?];
     }
     return description;
 }
@@ -148,7 +149,7 @@ static NSDictionary *MCPAXNodePipelineProbeValueSummary(id value) {
         summary[@"type"] = @"string";
         summary[@"length"] = @(stringValue.length);
         summary[@"value"] = stringValue.length > 240 ?
-            [[stringValue substringToIndex:240] stringByAppendingString:@"…"] :
+            [[stringValue substringToIndex:240] stringByAppendingString:@"�?] :
             stringValue;
         return summary;
     }
@@ -753,19 +754,14 @@ static NSString *MCPAXNodeInactiveRuntimeSkipReason(void) {
     return @"skipped: app AX element was creatable, but all readable UI attributes/candidate counts were empty; this matches an inactive AXRuntime state and avoids slow position hit-test fallbacks";
 }
 
-static double MCPAXNodeSystemVersionNumber(void) {
-    NSString *systemVersion = [[UIDevice currentDevice] systemVersion];
-    return systemVersion.length > 0 ? systemVersion.doubleValue : 0.0;
-}
-
 static BOOL MCPAXNodeIsPreIOS15Runtime(void) {
-    double version = MCPAXNodeSystemVersionNumber();
-    return version > 0.0 && version < 15.0;
+    NSInteger major = [HelmSystemInfo iOSMajorVersion];
+    return major > 0 && major < 15;
 }
 
 static BOOL MCPAXNodeIsIOS15Runtime(void) {
-    double version = MCPAXNodeSystemVersionNumber();
-    return version >= 15.0 && version < 16.0;
+    NSInteger major = [HelmSystemInfo iOSMajorVersion];
+    return major == 15;
 }
 
 static NSInteger MCPAXNodeIntegerCount(NSDictionary *counts, NSString *key) {

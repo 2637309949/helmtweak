@@ -1,13 +1,13 @@
 #import "AccessibilityManager.h"
-#import "MCPLogger.h"
+#import "HelmLogger.h"
 #import "MCPAXQueryContext.h"
 #import "MCPAXAttributeBridge.h"
 #import "MCPAXNodeSource.h"
 #import "MCPAXRemoteContextResolver.h"
 #import "MCPUIElementSerializer.h"
 #import "MCPUIElementsFacade.h"
-#import "SpringBoardPrivate.h"
-#import "AXPrivate.h"
+#import "../Private/HelmPrivateHeaders.h"
+#import "../Private/AXPrivate.h"
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
@@ -111,10 +111,10 @@ static id MCPMsgSendObject(id target, SEL selector) {
 }
 
 #define AX_LOG(fmt, ...) do { \
-    if ([MCPLogger isDebugLoggingEnabled]) { \
+    if ([HelmLogger isDebugLoggingEnabled]) { \
         NSString *_iosmcp_log = [NSString stringWithFormat:(@"[AX] " fmt), ##__VA_ARGS__]; \
         NSLog(@"[witchan][ios-mcp]%@", _iosmcp_log); \
-        [MCPLogger logMessage:_iosmcp_log]; \
+        [HelmLogger logMessage:_iosmcp_log]; \
     } \
 } while (0)
 static const BOOL MCPEnableAXParameterizedHitTest = YES;
@@ -683,6 +683,10 @@ static NSDictionary *MCPAXActivateCurrentProcessAXUIClientBootstrap(BOOL sendCur
     MCPAXRemoteContextResolver *_contextResolver;
     MCPUIElementSerializer *_uiElementSerializer;
     MCPUIElementsFacade *_uiElementsFacade;
+}
+
++ (BOOL)isSupportedOnCurrentIOS {
+    return YES;
 }
 
 + (instancetype)sharedInstance {

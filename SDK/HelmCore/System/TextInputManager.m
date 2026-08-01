@@ -1,18 +1,18 @@
 #import "TextInputManager.h"
 #import "AccessibilityManager.h"
-#import "IOHIDPrivate.h"
+#import "../Private/IOHIDPrivate.h"
 #import <mach/mach_time.h>
 #import <dlfcn.h>
 #import <stdint.h>
 #import <sys/types.h>
 #import <unistd.h>
-#import "MCPLogger.h"
+#import "HelmLogger.h"
 
 #define TI_LOG(fmt, ...) do { \
-    if ([MCPLogger isDebugLoggingEnabled]) { \
+    if ([HelmLogger isDebugLoggingEnabled]) { \
         NSString *_iosmcp_log = [NSString stringWithFormat:(@"[TextInput] " fmt), ##__VA_ARGS__]; \
         NSLog(@"[witchan][ios-mcp]%@", _iosmcp_log); \
-        [MCPLogger logMessage:_iosmcp_log]; \
+        [HelmLogger logMessage:_iosmcp_log]; \
     } \
 } while (0)
 
@@ -313,6 +313,10 @@ static NSArray<NSString *> *textChunks(NSString *text, NSUInteger maxUTF16Units)
 @implementation TextInputManager {
     IOHIDEventSystemClientRef _hidClient;
     dispatch_queue_t _inputQueue;
+}
+
++ (BOOL)isSupportedOnCurrentIOS {
+    return YES;
 }
 
 + (instancetype)sharedInstance {

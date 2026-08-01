@@ -1,10 +1,6 @@
 #import "MCPServer.h"
 #import <HelmCore/HelmCore.h>
 #import "ClipboardManager.h"
-#import "AppManager.h"
-#import "AccessibilityManager.h"
-#import "MCPProcessUtil.h"
-#import "TextInputManager.h"
 #import "FileSystemManager.h"
 #import "LogManager.h"
 #import "MCPLogger.h"

@@ -5,6 +5,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface AccessibilityManager : NSObject
 
++ (BOOL)isSupportedOnCurrentIOS;
 + (instancetype)sharedInstance;
 
 /// Get frontmost application info resolved from SpringBoard/runtime state.

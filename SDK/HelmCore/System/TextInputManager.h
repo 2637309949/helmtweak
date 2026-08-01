@@ -2,6 +2,7 @@
 
 @interface TextInputManager : NSObject
 
++ (BOOL)isSupportedOnCurrentIOS;
 + (instancetype)sharedInstance;
 
 /// Bulk text input through system keyboard events

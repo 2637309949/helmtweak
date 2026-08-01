@@ -18,11 +18,7 @@ HelmTweak_ENTITLEMENTS = entitlements.plist
 # Helpers (mcp-root/mcp-ldid/mcp-logreader/AppSync/mcp-roothelper) 见 tools/helpers/
 HelmMCP_FILES = tools/mcp/Tweak.x tools/mcp/MCPServer.m tools/mcp/MCPLogger.m \
                 tools/mcp/ClipboardManager.m \
-                tools/mcp/AppManager.m tools/mcp/AccessibilityManager.m tools/mcp/TextInputManager.m \
-                tools/mcp/FileSystemManager.m tools/mcp/LogManager.m \
-                tools/mcp/MCPProcessUtil.m tools/mcp/MCPAXQueryContext.m tools/mcp/MCPAXRemoteContextResolver.m \
-                tools/mcp/MCPUIElementSerializer.m tools/mcp/MCPUIElementsFacade.m tools/mcp/MCPAXAttributeBridge.m \
-                tools/mcp/MCPAXNodeSource.m
+                tools/mcp/FileSystemManager.m tools/mcp/LogManager.m
 HelmMCP_CFLAGS = -fobjc-arc -Wno-unused-function -Wno-deprecated-declarations -I$(THEOS_PROJECT_DIR)/SDK
 HelmMCP_FRAMEWORKS = IOKit UIKit CoreGraphics QuartzCore MobileCoreServices AVFoundation Security Vision
 HelmMCP_ENTITLEMENTS = tools/mcp/entitlements.plist
