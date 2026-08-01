@@ -9,6 +9,7 @@
 // setProperty:forKey:@"label" + reloadSpecifier:animated: 在 iOS 15+ 不重画 title（1.0.17/1.0.18 已确认）。
 
 #import <Preferences/Preferences.h>
+#import <UIKit/UIKit.h>
 #import <CoreFoundation/CoreFoundation.h>
 #import <sys/socket.h>
 #import <netinet/in.h>
@@ -120,24 +121,61 @@
     CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
 }
 
-// 读 Tweak.x 写入的真实运行状态（serverRunning）。probe 在 Settings 沙箱里
-// 连 127.0.0.1 可能失败（上滑退出 Settings 再进会重新 probe），
-// 所以以 prefs 状态为准，probe 只作辅助。
-- (BOOL)serverRunningPref {
-    BOOL running = NO;
-    CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("serverRunning"),
+// 读服务端写的状态机（starting/started/stopping/stopped）。
+- (NSString *)serverStatusString {
+    NSString *status = @"stopped";
+    CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("serverStatus"),
                                                      CFSTR("com.witchan.ios-mcp.preferences"));
-    if (v) {
-        if (CFGetTypeID(v) == CFBooleanGetTypeID()) {
-            running = CFBooleanGetValue((CFBooleanRef)v);
-        } else if (CFGetTypeID(v) == CFNumberGetTypeID()) {
-            int n = 0;
-            CFNumberGetValue((CFNumberRef)v, kCFNumberIntType, &n);
-            running = n != 0;
-        }
+    if (v && CFGetTypeID(v) == CFStringGetTypeID()) {
+        status = (__bridge NSString *)v;
         CFRelease(v);
     }
-    return running;
+    return status;
+}
+
+// 心跳判断：server 每 1s 写 serverHeartbeat 时间戳，>3s 未更新 = 死。
+// 这是最可靠的真实存活判断（Settings 沙箱连 127.0.0.1 不可靠）。
+- (BOOL)serverRunningByHeartbeat {
+    CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("serverHeartbeat"),
+                                                     CFSTR("com.witchan.ios-mcp.preferences"));
+    if (!v) return NO;
+    double ts = 0;
+    if (CFGetTypeID(v) == CFNumberGetTypeID()) {
+        CFNumberGetValue((CFNumberRef)v, kCFNumberDoubleType, &ts);
+    } else if (CFGetTypeID(v) == CFStringGetTypeID()) {
+        ts = [(__bridge NSString *)v doubleValue];
+    }
+    CFRelease(v);
+    if (ts <= 0) return NO;
+    return (CFAbsoluteTimeGetCurrent() - ts) <= 3.0;
+}
+
+// 综合判断真实运行状态：status=started 且心跳新鲜 = 在跑。
+- (BOOL)serverRunningByStatus {
+    NSString *status = [self serverStatusString];
+    if ([status isEqualToString:@"started"]) {
+        return [self serverRunningByHeartbeat];
+    }
+    return NO;
+}
+
+// 给 mcpToggleButton 的 cell 加/去转圈 spinner（模拟系统开关等待态）。
+- (void)setButtonLoading:(BOOL)loading {
+    UITableView *table = [self valueForKey:@"table"];
+    if (!table) return;
+    for (UITableViewCell *cell in [table visibleCells]) {
+        if (![cell.textLabel.text isEqualToString:@"启动中..."] &&
+            ![cell.textLabel.text isEqualToString:@"关闭中..."]) {
+            continue;
+        }
+        if (loading) {
+            UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray];
+            [spinner startAnimating];
+            cell.accessoryView = spinner;
+        } else {
+            cell.accessoryView = nil;
+        }
+    }
 }
 
 - (void)refreshServerStatus {
@@ -152,16 +190,17 @@
         __strong typeof(weakSelf) self = weakSelf;
         if (!self) return;
 
-        // 真实状态：先看 serverRunning pref（Tweak.x 维护），probe 通了再覆盖。
-        BOOL isUp = [self serverRunningPref];
+        // 真实状态：状态机+心跳为准，probe 通了再覆盖为 YES。
+        BOOL isUp = [self serverRunningByStatus];
         BOOL probeUp = [self probeMCPServerOnPort:[self configuredPort]];
         if (probeUp) isUp = YES;   // probe 通了必为运行中
-        // probe 失败不覆盖 pref 的 running 状态
+        // probe 失败不影响状态机判断
 
         dispatch_async(dispatch_get_main_queue(), ^{
             __strong typeof(weakSelf) self = weakSelf;
             if (!self) return;
             self.serverRunning = isUp;
+            [self setButtonLoading:NO];
             PSSpecifier *s = [self specifierForID:@"mcpToggleButton"];
             if (s) {
                 [s setName:isUp ? @"关闭服务" : @"启动服务"];
@@ -194,7 +233,7 @@
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         __strong typeof(weakSelf) self = weakSelf;
         if (!self) return;
-        BOOL isUp = [self serverRunningPref];
+        BOOL isUp = [self serverRunningByStatus];
         if ([self probeMCPServerOnPort:[self configuredPort]]) isUp = YES;
 
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -226,12 +265,23 @@
                 [self reload];
             }
 
+            // reload 完成后给 cell 加 spinner（模拟系统开关等待态）
+            __weak typeof(self) weakSpin = self;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                __strong typeof(weakSpin) self = weakSpin;
+                if (self) [self setButtonLoading:YES];
+            });
+
             // 等 1.5s 让 dylib 起/停 server，再 probe 实际状态刷新 label
             __weak typeof(self) weakSelf2 = self;
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
                            dispatch_get_main_queue(), ^{
                 __strong typeof(weakSelf2) self = weakSelf2;
-                if (self) [self refreshServerStatus];
+                if (self) {
+                    [self setButtonLoading:NO];
+                    [self refreshServerStatus];
+                }
             });
         });
     });
