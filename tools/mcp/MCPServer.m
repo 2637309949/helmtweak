@@ -1,6 +1,6 @@
 #import "MCPServer.h"
 #import "HIDManager.h"
-#import "ScreenManager.h"
+#import <HelmCore/HelmScreenManager.h>
 #import "ClipboardManager.h"
 #import "AppManager.h"
 #import "AccessibilityManager.h"
@@ -8,7 +8,7 @@
 #import "TextInputManager.h"
 #import "FileSystemManager.h"
 #import "LogManager.h"
-#import "OCRManager.h"
+#import <HelmCore/HelmOCRManager.h>
 #import "MCPLogger.h"
 #import "IOSMCPPreferences.h"
 #import <UIKit/UIKit.h>
@@ -1368,7 +1368,7 @@ static NSString *MCPQueryParameter(NSString *requestTarget, NSString *key) {
                          clientSocket:(int)clientSocket
                          requestLogId:(NSString *)requestLogId {
     // Honor the lock guard: do not serve device files while locked or screen off.
-    NSDictionary *deviceState = [[ScreenManager sharedInstance] deviceInteractionState];
+    NSDictionary *deviceState = [[HelmScreenManager sharedInstance] deviceInteractionState];
     if (MCPDeviceStateRequiresWakeOrUnlock(deviceState)) {
         [self sendErrorResponse:clientSocket status:403 message:@"Device is locked or screen is off; wake the device before downloading files" requestLogId:requestLogId];
         return;
@@ -2396,7 +2396,7 @@ static NSString *MCPLogId(id reqId) {
         return nil;
     }
 
-    NSDictionary *state = [[ScreenManager sharedInstance] deviceInteractionState];
+    NSDictionary *state = [[HelmScreenManager sharedInstance] deviceInteractionState];
     if (!MCPDeviceStateRequiresWakeOrUnlock(state)) {
         return nil;
     }
@@ -2423,7 +2423,7 @@ static NSString *MCPLogId(id reqId) {
     if (duration <= 0) duration = 100;
 
     BOOL isHomeButton = (button == HIDButtonHome);
-    NSDictionary *beforeState = isHomeButton ? [[ScreenManager sharedInstance] deviceInteractionState] : nil;
+    NSDictionary *beforeState = isHomeButton ? [[HelmScreenManager sharedInstance] deviceInteractionState] : nil;
 
     __block BOOL ok = NO;
     __block NSString *err = nil;
@@ -2439,7 +2439,7 @@ static NSString *MCPLogId(id reqId) {
     if (ok) {
         if (isHomeButton) {
             usleep(250 * 1000);
-            NSDictionary *afterState = [[ScreenManager sharedInstance] deviceInteractionState];
+            NSDictionary *afterState = [[HelmScreenManager sharedInstance] deviceInteractionState];
             id lockedValue = beforeState[@"locked"];
             id screenOnValue = beforeState[@"screen_on"];
             BOOL wasLocked = [lockedValue respondsToSelector:@selector(boolValue)] && [lockedValue boolValue];
@@ -2507,7 +2507,7 @@ static NSString *MCPLogId(id reqId) {
         return [self mcpError:reqId code:-32602 message:@"Invalid sequence: expected auto, power_then_home, or home_twice"];
     }
 
-    NSDictionary *beforeState = [[ScreenManager sharedInstance] deviceInteractionState];
+    NSDictionary *beforeState = [[HelmScreenManager sharedInstance] deviceInteractionState];
     NSString *sequenceUsed = normalizedSequence;
     if ([normalizedSequence isEqualToString:@"auto"]) {
         id lockScreenVisibleValue = beforeState[@"lock_screen_visible"];
@@ -2546,7 +2546,7 @@ static NSString *MCPLogId(id reqId) {
     }
 
     usleep((useconds_t)(MAX(delayMs, 250.0) * 1000.0));
-    NSDictionary *afterState = [[ScreenManager sharedInstance] deviceInteractionState];
+    NSDictionary *afterState = [[HelmScreenManager sharedInstance] deviceInteractionState];
     NSDictionary *result = @{
         @"sequence": sequenceUsed,
         @"steps": steps,
@@ -2776,7 +2776,7 @@ static NSString *MCPLogId(id reqId) {
 }
 
 - (NSDictionary *)executeScreenInfo:(id)reqId {
-    NSDictionary *info = [[ScreenManager sharedInstance] screenInfo];
+    NSDictionary *info = [[HelmScreenManager sharedInstance] screenInfo];
     return [self mcpSuccess:reqId structuredContent:info];
 }
 
@@ -2786,7 +2786,7 @@ static NSString *MCPLogId(id reqId) {
     if (!MCPBoolFromArgs(args, @"debug", NO, &debug, &paramError)) {
         return [self mcpError:reqId code:-32602 message:paramError];
     }
-    NSDictionary *payload = [[ScreenManager sharedInstance] takeScreenshotPayload];
+    NSDictionary *payload = [[HelmScreenManager sharedInstance] takeScreenshotPayload];
     NSString *base64 = payload[@"data"];
     NSString *mimeType = payload[@"mimeType"] ?: @"image/jpeg";
     if (base64.length == 0) {
@@ -3275,7 +3275,7 @@ static NSString *MCPLogId(id reqId) {
     }
 
     NSString *err = nil;
-    NSDictionary *result = [[OCRManager sharedInstance] recognizeTextWithLanguages:languages
+    NSDictionary *result = [[HelmOCRManager sharedInstance] recognizeTextWithLanguages:languages
                                                                     minConfidence:minConfidence
                                                                            region:region
                                                                              fast:fast
@@ -3331,7 +3331,7 @@ static NSString *MCPLogId(id reqId) {
     // Optional OCR layer
     if (includeOCR) {
         NSString *ocrErr = nil;
-        NSDictionary *ocr = [[OCRManager sharedInstance] recognizeTextWithLanguages:nil
+        NSDictionary *ocr = [[HelmOCRManager sharedInstance] recognizeTextWithLanguages:nil
                                                                       minConfidence:0.3
                                                                              region:nil
                                                                                fast:NO
@@ -3345,7 +3345,7 @@ static NSString *MCPLogId(id reqId) {
 
     // Optional screenshot
     if (includeScreenshot) {
-        NSDictionary *shot = [[ScreenManager sharedInstance] takeScreenshotPayload];
+        NSDictionary *shot = [[HelmScreenManager sharedInstance] takeScreenshotPayload];
         if ([shot[@"data"] isKindOfClass:[NSString class]]) {
             out[@"screenshot"] = shot[@"data"];
             out[@"screenshot_mime"] = shot[@"mimeType"] ?: @"image/jpeg";

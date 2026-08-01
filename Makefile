@@ -17,15 +17,17 @@ HelmTweak_ENTITLEMENTS = entitlements.plist
 # ===== HelmMCP — forked from witchan/ios-mcp (GPL-3.0), core dylib only =====
 # Helpers (mcp-root/mcp-ldid/mcp-logreader/AppSync/mcp-roothelper) 见 tools/helpers/
 HelmMCP_FILES = tools/mcp/Tweak.x tools/mcp/MCPServer.m tools/mcp/MCPLogger.m \
-                tools/mcp/HIDManager.m tools/mcp/ScreenManager.m tools/mcp/ClipboardManager.m \
+                tools/mcp/HIDManager.m tools/mcp/ClipboardManager.m \
                 tools/mcp/AppManager.m tools/mcp/AccessibilityManager.m tools/mcp/TextInputManager.m \
-                tools/mcp/FileSystemManager.m tools/mcp/LogManager.m tools/mcp/OCRManager.m \
+                tools/mcp/FileSystemManager.m tools/mcp/LogManager.m \
                 tools/mcp/MCPProcessUtil.m tools/mcp/MCPAXQueryContext.m tools/mcp/MCPAXRemoteContextResolver.m \
                 tools/mcp/MCPUIElementSerializer.m tools/mcp/MCPUIElementsFacade.m tools/mcp/MCPAXAttributeBridge.m \
                 tools/mcp/MCPAXNodeSource.m
-HelmMCP_CFLAGS = -fobjc-arc -Wno-unused-function -Wno-deprecated-declarations
+HelmMCP_CFLAGS = -fobjc-arc -Wno-unused-function -Wno-deprecated-declarations -I$(THEOS_PROJECT_DIR)/SDK
 HelmMCP_FRAMEWORKS = IOKit UIKit CoreGraphics QuartzCore MobileCoreServices AVFoundation Security Vision
 HelmMCP_ENTITLEMENTS = tools/mcp/entitlements.plist
+# 链接 HelmCore SDK dylib（CI 前置步骤先 build；after-stage 把它拷进 deb 的 /usr/lib）
+HelmMCP_LDFLAGS = $(THEOS_PROJECT_DIR)/SDK/HelmCore/.theos/obj/HelmCore.dylib
 # 双 scheme 自适应（抄上游 ios-mcp 模式）：
 #   roothide -> 链真 <roothide.h>（libroothide）+ -DMCP_ROOTHIDE=1
 #   rootless -> 用 tools/mcp/roothide_shim.h fallback，-DMCP_ROOTLESS=1
