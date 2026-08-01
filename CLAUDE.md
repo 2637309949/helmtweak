@@ -10,7 +10,7 @@ Project memory for fast pickup. Read this before touching the build.
 ## What this project IS (and is NOT)
 
 - A **Theos jailbreak tweak** (Logos) for **Dopamine rootless / ElleKit**.
-- Behavior: inject into **SpringBoard**, print `hello` to syslog on respring. No UI. Minimal demo.
+- Behavior: inject **HelmMCP** into **SpringBoard**, runs an MCP server (`:8686`) that lets AI control the phone (screenshot/OCR/touch/text/app mgmt/filesystem).
 - Target devices: A12–A17 (iPhone XS → iPhone 13 Pro Max). Fat **arm64 + arm64e**.
 - **NOT** the future `Helm` MCP-smart-terminal project. They share only a naming stem. This repo = `HelmTweak`; the MCP terminal = a separate `helm` repo. Don't conflate.
 
@@ -41,13 +41,12 @@ Project memory for fast pickup. Read this before touching the build.
 
 ## File map
 
-- [Makefile](Makefile) — `TARGET := iphone:clang:16.5:15.0`, `ARCHS = arm64 arm64e`, `THEOS_PACKAGE_SCHEME = rootless` (default; can override to `roothide` for local build on roothide device), `INSTALL_TARGET_PROCESSES = SpringBoard`, `TWEAK_NAME = HelmTweak HelmMCP`, `HelmTweak_ENTITLEMENTS = entitlements.plist`. HelmMCP scheme 自适应段（`ifeq ($(THEOS_PACKAGE_SCHEME),roothide) ... HelmMCP_LIBRARIES = roothide + -DMCP_ROOTHIDE=1`）。`after-stage::` 段把 build 好的 helpers bundle 进 deb staging（rootless 只 bundle mcp-logreader，roothide 还加 mcp-root + chmod 4755）。
-- [Tweak.x](Tweak.x) — `%hook SpringBoard` on `applicationDidFinishLaunching:`, `NSLog` hello. ARC on.
-- [HelmTweak.plist](HelmTweak.plist) — **filter plist**, `Filter.Bundles = [com.apple.springboard]`. Name MUST equal `TWEAK_NAME`.
+- [Makefile](Makefile) — `TARGET := iphone:clang:16.5:15.0`, `ARCHS = arm64 arm64e`, `THEOS_PACKAGE_SCHEME = rootless` (default; can override to `roothide` for local build on roothide device), `INSTALL_TARGET_PROCESSES = SpringBoard`, `TWEAK_NAME = HelmMCP`, `HelmMCP_ENTITLEMENTS = tools/mcp/entitlements.plist`. HelmMCP scheme 自适应段（`ifeq ($(THEOS_PACKAGE_SCHEME),roothide) ... HelmMCP_LIBRARIES = roothide + -DMCP_ROOTHIDE=1`）。`after-stage::` 段把 build 好的 helpers bundle 进 deb staging（rootless 只 bundle mcp-logreader，roothide 还加 mcp-root + chmod 4755）。
+- [tools/mcp/Tweak.x](tools/mcp/Tweak.x) — HelmMCP 入口：`%hook SpringBoard` autostart MCP server + 监听 darwin notification（Settings 开关）。ARC on.
+- [HelmMCP.plist](HelmMCP.plist) — **filter plist**, `Filter.Bundles = [com.apple.springboard]`. Name MUST equal `TWEAK_NAME`.
 - [control](control) — `Package: com.example.helmtweak`, `Architecture: iphoneos-arm64` (rootless fixed field), `Depends: mobilesubstrate`. **Filename is lowercase `control`** (see gotchas).
-- [entitlements.plist](entitlements.plist) — `no-sandbox`, `no-container`, `platform-application`. Embedded via `*_ENTITLEMENTS`.
 - [.github/workflows/build.yml](.github/workflows/build.yml) — macos-latest, `Randomblock1/theos-action@v1` for env+SDK, helper pre-build step (`make` in each `tools/mcp/helpers/<name>/`), then `make clean && make package` at root, then `upload-artifact` of `packages/*.deb`. **Only builds rootless** (theos-action doesn't ship libroothide).
-- [tools/mcp/](tools/mcp/) — **应用层**。HelmMCP dylib source（forked from `witchan/ios-mcp`, GPL-3.0）: Tweak.x / MCPServer / 各 Manager / 私有 header / `roothide_shim.h` (rootless 下提供 `rootfs()`/`jbroot()` fallback) / `IOSMCPPreferences.h` (默认端口 8686)。**用户可用的"工具"就是这里的 MCP**。
+- [tools/mcp/](tools/mcp/) — **应用层**。HelmMCP dylib source（forked from `witchan/ios-mcp`, GPL-3.0）: Tweak.x / MCPServer / 各 Manager / `IOSMCPPreferences.h` (默认端口 8686)。**用户可用的"工具"就是这里的 MCP**。
 - [tools/mcp/helpers/](tools/mcp/helpers/) — **MCP 内部 CLI 工具**（不暴露给用户，被 MCP server 调用）：每个自己 Makefile，scheme 自适应。`mcp-logreader/` (连 diagnosticd 拿 unified log，rootless + roothide 都 build)、`mcp-root/` (setuid root 命令白名单，只 roothide build + chmod 4755)、`mcp-roothelper/`、`mcp-ldid/`、`mcp-appsync/`。`README.md` 列出 Phase 2c 后续要 fork 的 helper + 各自卡点。
 - [SDK/HelmCore/](SDK/HelmCore/) — **SDK 层**（跨应用复用的 dylib）。私有 header 集中声明 + HelmSystemInfo（路径/版本/scheme）+ Screen/OCR/HID 等 Manager。应用层（tools/*）只经 HelmCore 高层 API 接触系统能力。
 - [scripts/](scripts/) — **开发工具链**（部署/验证/诊断/MCP 客户端），不参与打包。
@@ -89,7 +88,7 @@ NSString *text = [HelmOCRManager recognizeTextInImage:img];
 
 ## Gotchas (we hit these)
 
-- **Filter plist is mandatory.** Theos stage fails with `missing a filter property list` if `HelmTweak.plist` (or `Filter.plist`) is absent. `INSTALL_TARGET_PROCESSES` does NOT replace it — that var only affects the install step.
+- **Filter plist is mandatory.** Theos stage fails with `missing a filter property list` if `HelmMCP.plist` (or `Filter.plist`) is absent. `INSTALL_TARGET_PROCESSES` does NOT replace it — that var only affects the install step.
 - Filter plist filename **must equal `TWEAK_NAME`**. If you rename the tweak, rename the plist too.
 - `*_ENTITLEMENTS` is a real Theos var — it ldid-signs the dylib with the entitlements at build time. Don't remove it or the dylib won't carry the entitlements.
 - **Control file must be lowercase `control`** at project root (or `layout/DEBIAN/control`). Theos `deb.mk` does `$(wildcard $(THEOS_PROJECT_DIR)/control)` — case-sensitive. We shipped `Control` (capital) and it built fine on case-insensitive Windows/local macOS but failed on GitHub's **case-sensitive** macos runner with "requires you to have a control file". If you rename it back to capital C, CI breaks again.
@@ -136,10 +135,10 @@ These all bit us on 2026-07-31 while building `HelmTweakPrefs`. Re-deriving them
 
 ## How to iterate
 
-- **Change behavior:** edit [Tweak.x](Tweak.x) (add `%hook`s on SpringBoard methods). Keep ARC, keep `NSLog` for visibility.
+- **Change behavior:** edit [tools/mcp/Tweak.x](tools/mcp/Tweak.x) (add `%hook`s on SpringBoard methods) or [MCPServer.m](tools/mcp/MCPServer.m) (add MCP tools). Keep ARC, keep `NSLog` for visibility.
 - **Bump version:** edit [control](control) `Version:` (e.g. `1.0.1`). Commit + push → CI re-runs → new deb.
 - **Add entitlements:** edit [entitlements.plist](entitlements.plist); Theos embeds automatically.
-- **Target another process:** add its bundle id to `Filter.Bundles` in [HelmTweak.plist](HelmTweak.plist), and update `INSTALL_TARGET_PROCESSES` in [Makefile](Makefile).
+- **Target another process:** add its bundle id to `Filter.Bundles` in [HelmMCP.plist](HelmMCP.plist), and update `INSTALL_TARGET_PROCESSES` in [Makefile](Makefile).
 - After any change: `git add -A && git commit && git push`, then watch https://github.com/2637309949/helmtweak/actions. Red run? paste the failing step's log and fix the offending file.
 
 ## CI failure triage (known patterns)
