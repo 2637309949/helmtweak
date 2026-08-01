@@ -21,6 +21,15 @@ Project memory for fast pickup. Read this before touching the build.
 - Output: `packages/com.example.helmtweak_<version>_iphoneos-arm64.deb`.
 - **CI is the only distribution path.** No phone-side build scripts, no WSL/Linux cross-compile scripts. Don't add them.
 
+## Deploy to phone (装机)
+
+- Phone: root SSH. **Connection info lives in `mobile.txt`** (gitignored, never commit): `HOST=…`, `USER=root`, `PW=…`. Defaults in `tools/deploy/device.py`: `HOST=172.20.10.6 root/12345`.
+- Deploy scripts are in `tools/deploy/` (gitignored local assets; if missing after clone, re-create from the layout in PROGRESS.md):
+  - `python tools/deploy/deploy.py` — pull latest CI artifact (needs `gh` + `token.txt`) OR `--deb <path>` to use a local deb; upload via SFTP, `dpkg -i` (with `--force-depends` fallback), list bundled binaries, probe MCP `:8686`; `--respring` to `sbreload` after install.
+  - `python tools/deploy/verify.py` — check dylib injection (`launchctl procinfo` on SpringBoard/installd/backboardd), mcp-logreader smoke run, MCP probe.
+  - `python tools/deploy/diag.py <log|prefs|ps|prep|fetch>` — read `/var/mobile/*.log` + `HelmCore/helmcore.log`, dump prefs bundle/plist, list processes, clear logs + `killall Preferences/cfprefsd`, fetch device binary.
+- All deploy scripts read phone info from `mobile.txt` via `tools/deploy/device.py` — no hardcoded IP/pw in scripts.
+
 ## File map
 
 - [Makefile](Makefile) — `TARGET := iphone:clang:16.5:15.0`, `ARCHS = arm64 arm64e`, `THEOS_PACKAGE_SCHEME = rootless` (default; can override to `roothide` for local build on roothide device), `INSTALL_TARGET_PROCESSES = SpringBoard`, `TWEAK_NAME = HelmTweak HelmMCP`, `HelmTweak_ENTITLEMENTS = entitlements.plist`. HelmMCP scheme 自适应段（`ifeq ($(THEOS_PACKAGE_SCHEME),roothide) ... HelmMCP_LIBRARIES = roothide + -DMCP_ROOTHIDE=1`）。`after-stage::` 段把 build 好的 helpers bundle 进 deb staging（rootless 只 bundle mcp-logreader，roothide 还加 mcp-root + chmod 4755）。

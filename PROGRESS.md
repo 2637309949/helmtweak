@@ -47,25 +47,41 @@
 
 ## 复现部署（下次直接跑）
 
-```sh
-# 1. 拉 CI artifact（gh CLI 已装在 /c/Program Files/GitHub CLI/）
-"/c/Program Files/GitHub CLI/gh.exe" run download <run-id> --repo 2637309949/helmtweak -D /tmp/helm_artifact
+部署脚本在 `tools/deploy/`（gitignored 本地资产，clone 后需重建——布局见下）。手机连接信息在 repo 根 `mobile.txt`（gitignored）。
 
-# 2. deploy 脚本（已存在 deploy_1_0_25.py，下次版本变了改 DEB_LOCAL 路径）
-python deploy_1_0_25.py
-#   流程：SFTP put deb → dpkg -i → ls 验证 → mcp-appinst 跑一下 → MCP probe
+```sh
+# 1. 拉 CI artifact + 装机（用最新成功 run；gh 需要 token.txt）
+python tools/deploy/deploy.py            # 或 --deb <path.deb> 用本地 deb
+python tools/deploy/deploy.py --respring # 装完 sbreload
+
+# 2. 验证
+python tools/deploy/verify.py            # 注入检查 + MCP probe + logreader
+
+# 3. 诊断
+python tools/deploy/diag.py log    # 看 /var/mobile/*.log + HelmCore log
+python tools/deploy/diag.py prefs  # dump prefs bundle/plist
+python tools/deploy/diag.py ps     # 看进程
+python tools/deploy/diag.py prep   # 清日志 + kill Preferences/cfprefsd
+python tools/deploy/diag.py fetch  # 拉设备二进制到 _diag_binary/
 ```
+
+`tools/deploy/` 布局（gitignored，如缺失按此重建）：
+- `device.py` — 手机连接共享模块，从 `mobile.txt` 读 `HOST/USER/PW`，暴露 `connect()` / `run(c,cmd)`。
+- `deploy.py` — artifact 拉取 + SFTP 上传 + `dpkg -i`（含 `--force-depends` fallback）+ 产物列表 + MCP probe。
+- `verify.py` — `launchctl procinfo` 注入检查 + mcp-logreader 冒烟 + MCP probe。
+- `diag.py` — 日志/prefs/进程/清理/拉二进制子命令。
+
+手机 IP 会随热点/Wi-Fi 环境变化：改 `mobile.txt` 的 `HOST` 即可，脚本无硬编码。
 
 ## 本地机密文件（均已 .gitignore，**别提交**）
 
 | 文件 | 内容 |
 |---|---|
-| `token.txt` | GitHub fine-grained PAT（如果还在用 gh CLI 就不需要） |
-| `mobile.txt` | 手机 ssh 指令 + test 编译机 sudo 密码 |
-| `deploy*.py` | 各版本部署脚本（硬编码手机 IP/pw） |
-| `debug*.py` / `diag*.py` / `probe*.py` / `purge*.py` / `fetch*.py` | 临时诊断脚本 |
-| `packages/` | 本机 build 的 deb |
+| `token.txt` | GitHub fine-grained PAT（`gh` CLI 用它） |
+| `mobile.txt` | 手机连接信息：`HOST/USER/PW`（`tools/deploy/device.py` 读取） |
+| `tools/deploy/` | 本地部署脚本（gitignored，clone 后按上文布局重建） |
 | `_diag_binary/` | 反编译产物 |
+| `packages/` | 本机 build 的 deb |
 
 ## 不要做的事
 
