@@ -27,8 +27,16 @@ HelmCore SDK 建立 + 全链路接入完成，见上面「当前状态」。
 
 ## 下次干啥（候选，挑一个继续）
 
-- **Phase 4 候选**：把剩下的 MCP Manager（AppManager / AccessibilityManager / HIDManager 等）也抽进 HelmCore，逐步消灭 tools/mcp 里的私有 API 直接调用。
-- **验证**：装机验证 1.0.27 的 prefs 工具箱列表 + HelmMCP 截图/OCR 行为不变（见下「复现部署」）。
+- **Phase 4 剩余**：把剩下的 MCP Manager 抽进 HelmCore：
+  - AppManager（2499 行，重 roothide 逻辑 + SpringBoardPrivate）— 大活，可分拆。
+  - AccessibilityManager + MCPAX 栈（AX 树、UI element 序列化，~7000 行）— 最大最难。
+  - TextInputManager（依赖 AccessibilityManager.frontmostApplicationInfo，等 AX 先抽）。
+  - ClipboardManager / FileSystemManager / LogManager（无私有 API，价值低，可不动）。
+- **已抽**：HelmSystemInfo / HelmScreenManager / HelmOCRManager / HelmHIDManager + HelmLogger。
+  MCPProcessUtil 的 jbroot/rootfs 已改走 [HelmSystemInfo]，不再直接碰 roothide_shim.h。
+- **shim guard 坑**（本轮踩过）：tools/mcp/IOHIDPrivate.h 做 shim 时 guard 不能和 SDK 目标头
+  （HelmPrivateHeaders.h / IOHIDPrivate.h）同名，否则 SDK 头整个被跳过 → 类型缺失。shim 用独立 guard。
+- **验证**：装机验证 1.0.27 的 prefs 工具箱列表 + HelmMCP 截图/OCR/触摸行为不变（见下「复现部署」）。
 
 ## Phase 2c 已完成的 5 个迭代
 
