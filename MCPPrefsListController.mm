@@ -297,6 +297,9 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     btn.frame = CGRectZero;
     [btn setTitle:@"刷新" forState:UIControlStateNormal];
     [btn.titleLabel setFont:[UIFont systemFontOfSize:13.0]];
+    // 文字右对齐，贴按钮右缘：按钮右缘=开关右缘，文字右缘才能与开关右缘对齐
+    btn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentRight;
+    btn.contentEdgeInsets = UIEdgeInsetsZero;
     [btn addTarget:self action:@selector(refreshLogsTapped:) forControlEvents:UIControlEventTouchUpInside];
     [footer addSubview:btn];
     self.logRefreshButton = btn;
