@@ -67,20 +67,20 @@
 			<string>启动日志</string>
 		</dict>
 		<dict>
-			<key>cell</key>
-			<string>PSStaticTextCell</string>
-			<key>id</key>
-			<string>logViewerCell</string>
-			<key>label</key>
-			<string>（开启启动日志后这里显示最近 5 条）</string>
-		</dict>
-		<dict>
 			<key>action</key>
 			<string>clearLogs:</string>
 			<key>cell</key>
 			<string>PSButtonCell</string>
 			<key>label</key>
 			<string>清空日志</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSStaticTextCell</string>
+			<key>id</key>
+			<string>logViewerCell</string>
+			<key>label</key>
+			<string>（开启启动日志后这里显示最近 5 条）</string>
 		</dict>
 	</array>
 	<key>title</key>

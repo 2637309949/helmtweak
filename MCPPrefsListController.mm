@@ -31,21 +31,16 @@
 @property (nonatomic, assign) CFTimeInterval toggleTimestamp;
 @property (nonatomic, assign) BOOL finalizeScheduled;
 @property (nonatomic, strong) UISwitch *toggleSwitch;
-@property (nonatomic, strong) NSTimer *logTimer;
-@property (nonatomic, strong) PSSpecifier *logViewerSpec;
 @property (nonatomic, assign) BOOL logViewerInstalled;
+@property (nonatomic, weak) UITextView *logTextView;
+@property (nonatomic, weak) UIButton *logRefreshButton;
 @end
 
 @implementation MCPPrefsListController
 
-// 端口 cell 文本右对齐（PSEditTextCell 默认不保证右侧）+ 日志 cell 多行小字。
+// 端口 cell 文本右对齐（PSEditTextCell 默认不保证右侧）。
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell = [super tableView:tableView cellForRowAtIndexPath:indexPath];
-    PSSpecifier *spec = [self specifierForID:@"logViewerCell"];
-    NSUInteger logIdx = NSNotFound;
-    if (spec) {
-        logIdx = [[self specifiers] indexOfObject:spec];
-    }
     if ([cell.textLabel.text isEqualToString:@"端口"]) {
         for (UIView *sub in cell.contentView.subviews) {
             if ([sub isKindOfClass:[UITextField class]]) {
@@ -53,22 +48,88 @@
             }
         }
     }
-    if (logIdx != NSNotFound && indexPath.section == 0 && (NSInteger)logIdx == indexPath.row) {
-        cell.textLabel.font = [UIFont systemFontOfSize:11.0];
-        cell.textLabel.numberOfLines = 0;
-        cell.textLabel.lineBreakMode = NSLineBreakByCharWrapping;
+    if ([self isLogViewerRow:indexPath]) {
+        [self configureLogViewerCell:cell];
     }
     return cell;
 }
 
-// 日志 cell 给足够高度容纳 5 行。单 section，row 即 specifiers 索引。
-- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
+- (BOOL)isLogViewerRow:(NSIndexPath *)indexPath {
     PSSpecifier *spec = [self specifierForID:@"logViewerCell"];
-    if (spec) {
-        NSUInteger idx = [[self specifiers] indexOfObject:spec];
-        if (idx != NSNotFound && indexPath.section == 0 && (NSInteger)idx == indexPath.row) {
-            return 120.0;
+    if (!spec) return NO;
+    NSUInteger idx = [[self specifiers] indexOfObject:spec];
+    return idx != NSNotFound && indexPath.section == 0 && (NSInteger)idx == indexPath.row;
+}
+
+// 日志 cell：灰底圆角多行文本 + 右上角「刷新」按钮。
+- (void)configureLogViewerCell:(UITableViewCell *)cell {
+    cell.textLabel.text = @"";  // 隐藏原 label
+
+    UITextView *tv = [cell.contentView viewWithTag:4201];
+    if (!tv) {
+        CGFloat inset = 16.0;
+        tv = [[UITextView alloc] initWithFrame:CGRectMake(inset, 6, cell.contentView.bounds.size.width - inset * 2, 108)];
+        tv.tag = 4201;
+        tv.editable = NO;
+        tv.selectable = YES;
+        tv.scrollEnabled = YES;
+        tv.showsVerticalScrollIndicator = YES;
+        tv.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
+        tv.layer.cornerRadius = 8.0;
+        tv.font = [UIFont systemFontOfSize:11.0];
+        tv.textContainerInset = UIEdgeInsetsMake(6, 6, 6, 6);
+        [cell.contentView addSubview:tv];
+        self.logTextView = tv;
+
+        UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
+        btn.tag = 4202;
+        btn.frame = CGRectMake(cell.contentView.bounds.size.width - inset - 52, 10, 52, 24);
+        [btn setTitle:@"刷新" forState:UIControlStateNormal];
+        [btn.titleLabel setFont:[UIFont systemFontOfSize:13.0]];
+        [btn addTarget:self action:@selector(refreshLogsTapped:) forControlEvents:UIControlEventTouchUpInside];
+        [cell.contentView addSubview:btn];
+        self.logRefreshButton = btn;
+    }
+    // cell 渲染时填充一次当前日志（开关已开则显示内容）
+    if ([self debugLoggingEnabled]) {
+        [self refreshLogViewer];
+    }
+}
+
+// 「刷新」按钮：点击转圈刷新日志。
+- (void)refreshLogsTapped:(UIButton *)sender {
+    if (self.logViewerInstalled) return;  // 正在刷新
+    self.logViewerInstalled = YES;
+
+    UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc]
+        initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+    spinner.frame = sender.bounds;
+    spinner.tag = 4203;
+    [sender addSubview:spinner];
+    [sender setTitle:@"" forState:UIControlStateNormal];
+    [spinner startAnimating];
+
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        __strong typeof(weakSelf) self = weakSelf;
+        if (!self) return;
+        [self refreshLogViewer];
+        self.logViewerInstalled = NO;
+        for (UIView *v in sender.subviews) {
+            if (v.tag == 4203) {
+                [v removeFromSuperview];
+                break;
+            }
         }
+        [sender setTitle:@"刷新" forState:UIControlStateNormal];
+    });
+}
+
+// 日志 cell 高度：5 行约 120pt。
+- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
+    if ([self isLogViewerRow:indexPath]) {
+        return 120.0;
     }
     return [super tableView:tableView heightForRowAtIndexPath:indexPath];
 }
@@ -94,7 +155,7 @@
 }
 
 // 用户拨动开关时，Preferences 框架调这里（iOS 15+ action: 不触发，已验证走这条路）。
-// 服务开关 -> 接管启停；启动日志开关 -> 启停日志刷新 timer；其余直接透传。
+// 服务开关 -> 接管启停；启动日志开关 -> 开时立即刷新一次日志显示；其余直接透传。
 - (void)setPreferenceValue:(id)value specifier:(PSSpecifier *)spec {
     NSString *name = [spec name];
     BOOL isToggle = [name isEqualToString:@"服务"];
@@ -102,18 +163,8 @@
     if (isToggle) {
         [self logPrefs:@"toggle to %@", value];
         [self handleToggleRequest:[value boolValue]];
-    } else if (isLogging) {
-        [self stopLogTimer];
-        if ([value boolValue]) {
-            [self installLogViewer];
-            [self startLogTimerIfNeeded];
-        } else {
-            PSSpecifier *v = [self specifierForID:@"logViewerCell"];
-            if (v) {
-                [v setName:@"（开启启动日志后这里显示最近 5 条）"];
-                [self reload];
-            }
-        }
+    } else if (isLogging && [value boolValue]) {
+        [self refreshLogViewer];
     }
     [super setPreferenceValue:value specifier:spec];
 }
@@ -129,13 +180,14 @@
     [super viewWillAppear:animated];
     [self registerControlObservers];
     [self refreshServerStatus];
-    [self startLogTimerIfNeeded];
+    if ([self debugLoggingEnabled]) {
+        [self refreshLogViewer];
+    }
 }
 
 - (void)viewWillDisappear:(BOOL)animated {
     [super viewWillDisappear:animated];
     [self unregisterControlObservers];
-    [self stopLogTimer];
 }
 
 #pragma mark - Darwin event observers
@@ -273,32 +325,6 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     }
 }
 
-// 是否正显示在当前 MCP 看板（view 加载且挂在窗口上 = 用户看得到）。
-- (BOOL)isMCPPanelVisible {
-    return self.isViewLoaded && self.view.window != nil;
-}
-
-// 开启启动日志时定时刷新日志 cell。用 NSTimer 轮询文件，避免动态构造 specifier。
-// 定时器只在 viewWillAppear 期间存在，viewWillDisappear 即停；回调内再做可见性判断，
-// 确保不在当前看板（被 push 覆盖/切后台）时不读文件。
-- (void)startLogTimerIfNeeded {
-    BOOL logging = [self debugLoggingEnabled];
-    if (!logging) return;
-    if (self.logTimer) return;
-    [self installLogViewer];
-    self.logTimer = [NSTimer scheduledTimerWithTimeInterval:2.0
-                                                     target:self
-                                                   selector:@selector(refreshLogViewer)
-                                                   userInfo:nil
-                                                    repeats:YES];
-    [self refreshLogViewer];
-}
-
-- (void)stopLogTimer {
-    [self.logTimer invalidate];
-    self.logTimer = nil;
-}
-
 - (BOOL)debugLoggingEnabled {
     CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("debugLoggingEnabled"),
                                                      CFSTR("com.witchan.ios-mcp.preferences"));
@@ -310,24 +336,14 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     return on;
 }
 
-// 日志 cell 存在与否跟随调试开关：开关开 -> 补上日志 cell；关 -> 移除。
-// 用 [self reload] 重建（specifier 列表改动后安全路径）。
-- (void)installLogViewer {
-    if (self.logViewerInstalled) return;
-    self.logViewerInstalled = YES;
-    [self refreshLogViewer];
-}
-
-// 读 ios-mcp.log 最后 5 行，写入 logViewerCell。每次重新取 spec（reload 会重建对象）。
+// 读 ios-mcp.log 最后 5 行，写入 logTextView（仅在当前看板 + 日志开关开时）。
 - (void)refreshLogViewer {
-    if (![self isMCPPanelVisible]) return;  // 不在当前看板，不读日志
-    PSSpecifier *s = [self specifierForID:@"logViewerCell"];
-    if (!s) return;
+    if (![self debugLoggingEnabled]) return;
+    if (!(self.isViewLoaded && self.view.window != nil)) return;  // 不在当前看板不读
     NSArray *lines = [self lastLogLines:5];
     NSString *text = lines.count ? [lines componentsJoinedByString:@"\n"] : @"（暂无日志）";
-    if (![text isEqualToString:[s name]]) {
-        [s setName:text];
-        [self reload];
+    if (self.logTextView) {
+        self.logTextView.text = text;
     }
 }
 
