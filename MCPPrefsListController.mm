@@ -281,37 +281,28 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     }
 }
 
-// 构建日志 footer：顶部一行(左上角时间 label + 右上角刷新按钮) + 下方 textView。
+// 构建日志 footer：只创建控件，frame 统一在 layoutLogFooter 里按当前真实宽度计算。
 - (void)buildLogFooterWithTable:(UITableView *)table {
-    CGFloat inset = 16.0;
-    UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, table.bounds.size.width, 200)];
+    UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, table.bounds.size.width, 160)];
     footer.autoresizingMask = UIViewAutoresizingFlexibleWidth;
 
-    // 顶部行：时间 label（左，与分组标题同色字号）+ 刷新按钮（右，对齐开关左缘），下方日志区。
-    UILabel *time = [[UILabel alloc] initWithFrame:CGRectMake(inset, 2, 200, 20)];
+    UILabel *time = [[UILabel alloc] initWithFrame:CGRectZero];
     time.font = [UIFont systemFontOfSize:13.0];
     time.textColor = [UIColor secondaryLabelColor];
     time.text = @"";
     [footer addSubview:time];
     self.logTimeLabel = time;
 
-    // 按钮右缘对齐 UISwitch 左缘（开关宽约 51pt，右边距 inset）
-    const CGFloat switchW = 51.0;
     UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
-    btn.frame = CGRectMake(footer.bounds.size.width - inset - switchW - 56, 0, 56, 24);
-    btn.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
+    btn.frame = CGRectZero;
     [btn setTitle:@"刷新" forState:UIControlStateNormal];
     [btn.titleLabel setFont:[UIFont systemFontOfSize:13.0]];
     [btn addTarget:self action:@selector(refreshLogsTapped:) forControlEvents:UIControlEventTouchUpInside];
     [footer addSubview:btn];
     self.logRefreshButton = btn;
 
-    // 日志区：UILabel 固定行数，每行尾截断不换行，8 行高度。
-    const CGFloat logLineH = 15.0;      // 11pt 字行高
-    const NSInteger logLines = 8;
-    UILabel *log = [[UILabel alloc] initWithFrame:CGRectMake(inset, 24, footer.bounds.size.width - inset * 2, logLineH * logLines)];
-    log.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    log.numberOfLines = logLines;
+    UILabel *log = [[UILabel alloc] initWithFrame:CGRectZero];
+    log.numberOfLines = 8;
     log.lineBreakMode = NSLineBreakByTruncatingTail;
     log.backgroundColor = [UIColor clearColor];
     log.textColor = [UIColor secondaryLabelColor];
@@ -323,19 +314,30 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     self.logFooterView = footer;
 }
 
-// footer 固定高度：8 条日志 + 顶部行。UILabel 8 行高约 120pt。
+// footer 固定高度：8 条日志 + 顶部行。所有 frame 在此用当前 table 宽度统一计算。
 - (void)layoutLogFooter {
     UITableView *table = [self valueForKey:@"table"];
     if (!table || !self.logFooterView) return;
 
+    CGFloat width = table.bounds.size.width;
+    CGFloat inset = 16.0;
     CGFloat footerTop = 12.0;      // 距最后一行间距
     CGFloat headerH = 24.0;        // 顶部时间+刷新行高
     CGFloat logH = 120.0;          // 8 行日志高度
+    CGFloat btnW = 56.0;
 
     CGRect f = self.logFooterView.frame;
+    f.size.width = width;
     f.size.height = footerTop + headerH + logH;
     self.logFooterView.frame = f;
-    self.logTextLabel.frame = CGRectMake(16, footerTop + headerH, f.size.width - 32, logH);
+
+    // 时间：左对齐 x=inset，与分组标题同缘
+    self.logTimeLabel.frame = CGRectMake(inset, footerTop, width - inset * 2 - btnW, headerH);
+    // 刷新按钮：右缘对齐开关左缘（开关宽 51，右边距 inset）
+    self.logRefreshButton.frame = CGRectMake(width - inset - 51 - btnW, footerTop, btnW, headerH);
+    // 日志区
+    self.logTextLabel.frame = CGRectMake(inset, footerTop + headerH, width - inset * 2, logH);
+
     table.tableFooterView = self.logFooterView;
 }
 
