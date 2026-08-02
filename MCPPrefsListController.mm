@@ -312,7 +312,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     tv.selectable = YES;
     tv.scrollEnabled = YES;
     tv.showsVerticalScrollIndicator = YES;
-    tv.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
+    tv.backgroundColor = [UIColor systemGroupedBackgroundColor];
     tv.layer.cornerRadius = 8.0;
     tv.font = [UIFont systemFontOfSize:11.0];
     tv.textContainerInset = UIEdgeInsetsMake(6, 6, 6, 6);
