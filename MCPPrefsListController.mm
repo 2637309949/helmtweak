@@ -33,6 +33,33 @@
 
 @implementation MCPPrefsListController
 
+// 验证用：NSLog 进 unified log 手机上读不到，写文件。
+- (void)logPrefs:(NSString *)fmt, ... {
+    va_list args;
+    va_start(args, fmt);
+    NSString *msg = [[NSString alloc] initWithFormat:fmt arguments:args];
+    va_end(args);
+    NSString *path = @"/var/mobile/helmtweak_prefs.log";
+    NSString *line = [NSString stringWithFormat:@"[%@] %@\n", [NSDate date], msg];
+    NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:path];
+    if (!fh) {
+        [[NSFileManager defaultManager] createFileAtPath:path contents:nil attributes:nil];
+        fh = [NSFileHandle fileHandleForWritingAtPath:path];
+    }
+    if (fh) {
+        [fh seekToEndOfFile];
+        [fh writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
+        [fh closeFile];
+    }
+}
+
+// 验证 PSSwitchCell 拨动时是否走到这里（iOS 15+ action: 不触发，看 setPreferenceValue: 是否可靠）。
+- (void)setPreferenceValue:(id)value specifier:(PSSpecifier *)spec {
+    // 注意：只读 spec.name，不读 id/property（会 SIGABRT，见 CLAUDE.md gotchas）。
+    [self logPrefs:@"setPreferenceValue spec.name=%@ value=%@", [spec name], value];
+    [super setPreferenceValue:value specifier:spec];
+}
+
 - (NSArray *)specifiers {
     if (!_specifiers) {
         _specifiers = [self loadSpecifiersFromPlistName:@"MCP" target:self];
@@ -129,9 +156,9 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     self.serverRunning = running;
     [self writeEnabledPref:running];
     [self setButtonLoading:NO];
+    // 验证版：不改写 label，PSSwitchCell 保持「MCP 服务」固定文案。
     PSSpecifier *s = [self specifierForID:@"mcpToggleButton"];
     if (s) {
-        [s setName:running ? @"关闭服务" : @"启动服务"];
         [self reload];
     }
 }
@@ -202,9 +229,9 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
 
     self.serverRunning = isUp;
     [self setButtonLoading:NO];
+    // 验证版：不改写 label。
     PSSpecifier *s = [self specifierForID:@"mcpToggleButton"];
     if (s) {
-        [s setName:isUp ? @"关闭服务" : @"启动服务"];
         [self reload];
     }
 }

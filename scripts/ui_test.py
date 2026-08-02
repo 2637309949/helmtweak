@@ -135,9 +135,11 @@ def main():
                 swipe(187, 650, 187, 300)
             time.sleep(0.8)
     elif cmd == "find":
+        # find <text> [pages] [up|down]  逐屏滚动查找，默认向下
         target = sys.argv[2]
         pages = int(sys.argv[3]) if len(sys.argv) > 3 else 10
-        found = find_text(target, pages)
+        down = not (len(sys.argv) > 4 and sys.argv[4] == "up")
+        found = find_text(target, pages, scroll_down=down)
         if found:
             t, tap, page = found
             print(f"FOUND '{t}' tap=({tap.get('x')},{tap.get('y')}) page={page}")
