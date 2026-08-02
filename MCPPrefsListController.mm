@@ -34,6 +34,7 @@
 @property (nonatomic, assign) BOOL logViewerInstalled;
 @property (nonatomic, strong) UITextView *logTextView;
 @property (nonatomic, strong) UIButton *logRefreshButton;
+@property (nonatomic, strong) UILabel *logTimeLabel;
 @property (nonatomic, strong) UIView *logFooterView;
 @end
 
@@ -104,6 +105,11 @@
 - (void)viewWillDisappear:(BOOL)animated {
     [super viewWillDisappear:animated];
     [self unregisterControlObservers];
+}
+
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    [self layoutLogFooter];
 }
 
 #pragma mark - Darwin event observers
@@ -258,41 +264,86 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     if (!table) return;
     if ([self debugLoggingEnabled]) {
         if (!self.logFooterView) {
-            CGFloat width = table.bounds.size.width;
-            CGFloat inset = 16.0;
-            UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, width, 140)];
-            footer.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-
-            UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(inset, 8, width - inset * 2, 120)];
-            tv.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-            tv.editable = NO;
-            tv.selectable = YES;
-            tv.scrollEnabled = YES;
-            tv.showsVerticalScrollIndicator = YES;
-            tv.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
-            tv.layer.cornerRadius = 8.0;
-            tv.font = [UIFont systemFontOfSize:11.0];
-            tv.textContainerInset = UIEdgeInsetsMake(6, 6, 6, 6);
-            tv.text = @"（暂无日志，点右上角刷新）";
-            [footer addSubview:tv];
-            self.logTextView = tv;
-
-            UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
-            btn.frame = CGRectMake(width - inset - 56, 12, 56, 26);
-            btn.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
-            [btn setTitle:@"刷新" forState:UIControlStateNormal];
-            [btn.titleLabel setFont:[UIFont systemFontOfSize:13.0]];
-            [btn addTarget:self action:@selector(refreshLogsTapped:) forControlEvents:UIControlEventTouchUpInside];
-            [footer addSubview:btn];
-            self.logRefreshButton = btn;
-
-            self.logFooterView = footer;
+            [self buildLogFooterWithTable:table];
         }
         table.tableFooterView = self.logFooterView;
+        [self layoutLogFooter];
         [self refreshLogViewer];
     } else {
         table.tableFooterView = nil;
     }
+}
+
+// 构建日志 footer：顶部一行(左上角时间 label + 右上角刷新按钮) + 下方 textView。
+- (void)buildLogFooterWithTable:(UITableView *)table {
+    CGFloat inset = 16.0;
+    UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, table.bounds.size.width, 200)];
+    footer.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+
+    UILabel *time = [[UILabel alloc] initWithFrame:CGRectMake(inset, 4, 200, 24)];
+    time.font = [UIFont systemFontOfSize:12.0];
+    time.textColor = [UIColor secondaryLabelColor];
+    time.text = @"";
+    [footer addSubview:time];
+    self.logTimeLabel = time;
+
+    UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
+    btn.frame = CGRectMake(footer.bounds.size.width - inset - 56, 2, 56, 26);
+    btn.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
+    [btn setTitle:@"刷新" forState:UIControlStateNormal];
+    [btn.titleLabel setFont:[UIFont systemFontOfSize:13.0]];
+    [btn addTarget:self action:@selector(refreshLogsTapped:) forControlEvents:UIControlEventTouchUpInside];
+    [footer addSubview:btn];
+    self.logRefreshButton = btn;
+
+    UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(inset, 32, footer.bounds.size.width - inset * 2, footer.bounds.size.height - 40)];
+    tv.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    tv.editable = NO;
+    tv.selectable = YES;
+    tv.scrollEnabled = YES;
+    tv.showsVerticalScrollIndicator = YES;
+    tv.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
+    tv.layer.cornerRadius = 8.0;
+    tv.font = [UIFont systemFontOfSize:11.0];
+    tv.textContainerInset = UIEdgeInsetsMake(6, 6, 6, 6);
+    tv.text = @"（暂无日志，点右上角刷新）";
+    [footer addSubview:tv];
+    self.logTextView = tv;
+
+    self.logFooterView = footer;
+}
+
+// footer 高度 = 表格剩余空间：table 高度 - 所有 cell 行高之和 - 分组头尾 - 顶部留白。
+// 用 row 高度求和，避免 footer 自身影响 contentSize 的循环依赖。不同设备自适应。
+- (void)layoutLogFooter {
+    UITableView *table = [self valueForKey:@"table"];
+    if (!table || !self.logFooterView) return;
+
+    CGFloat tableH = table.bounds.size.height;
+    CGFloat used = 0.0;
+    NSInteger sections = [table numberOfSections];
+    for (NSInteger s = 0; s < sections; s++) {
+        used += [table rectForHeaderInSection:s].size.height;
+        used += [table rectForFooterInSection:s].size.height;
+        NSInteger rows = [table numberOfRowsInSection:s];
+        for (NSInteger r = 0; r < rows; r++) {
+            used += [table rectForRowAtIndexPath:
+                     [NSIndexPath indexPathForRow:r inSection:s]].size.height;
+        }
+    }
+
+    CGFloat footerTop = 20.0;      // 距最后一行间距
+    CGFloat headerH = 32.0;        // 顶部时间+刷新行高
+    CGFloat gap = 8.0;
+    CGFloat minH = 120.0;          // 最小高度（内容区）
+    CGFloat avail = tableH - used - footerTop - headerH - gap;
+    if (avail < minH) avail = minH;
+
+    CGRect f = self.logFooterView.frame;
+    f.size.height = footerTop + headerH + avail;
+    self.logFooterView.frame = f;
+    self.logTextView.frame = CGRectMake(16, footerTop + headerH, f.size.width - 32, avail);
+    table.tableFooterView = self.logFooterView;  // 重设以触发重排
 }
 
 // 「刷新」按钮：点击转圈刷新日志。
@@ -319,15 +370,61 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     });
 }
 
-// 读 ios-mcp.log 最后 5 行，写入 logTextView（仅在当前看板 + 日志开关开时）。
+// 读 ios-mcp.log 最近 5 条，倒序（最新在前）写入 textView。
+// 仅最新一条保留完整时间戳显示在左上角，其余行去掉时间前缀。
+// 仅在当前看板 + 日志开关开时执行。
 - (void)refreshLogViewer {
     if (![self debugLoggingEnabled]) return;
     if (!(self.isViewLoaded && self.view.window != nil)) return;  // 不在当前看板不读
-    NSArray *lines = [self lastLogLines:5];
-    NSString *text = lines.count ? [lines componentsJoinedByString:@"\n"] : @"（暂无日志）";
-    if (self.logTextView) {
-        self.logTextView.text = text;
+    NSArray<NSString *> *lines = [self lastLogLines:5];  // 最新在前
+    if (!lines.count) {
+        self.logTextView.text = @"（暂无日志）";
+        self.logTimeLabel.text = @"";
+        return;
     }
+
+    NSString *newestTime = [self timestampFromLogLine:lines.firstObject];
+    self.logTimeLabel.text = newestTime ?: @"";
+
+    NSMutableArray<NSString *> *display = [NSMutableArray array];
+    for (NSUInteger i = 0; i < lines.count; i++) {
+        if (i == 0) {
+            [display addObject:lines[i]];          // 最新一条带完整时间
+        } else {
+            [display addObject:[self logLineWithoutTimestamp:lines[i]]];
+        }
+    }
+    self.logTextView.text = [display componentsJoinedByString:@"\n"];
+}
+
+// 从日志行头部提取时间戳，如 "2026-08-02 13:42:00 +0000"。
+- (NSString *)timestampFromLogLine:(NSString *)line {
+    // MCPLogger 格式: "%Y-%m-%d %H:%M:%S%z pid=... " —— 前 19 字符是时间，随后是 +0800 时区
+    if (line.length < 19) return nil;
+    NSString *head = [line substringToIndex:19];
+    // 简单校验是数字-数字格式
+    if ([head characterAtIndex:4] == '-' && [head characterAtIndex:7] == '-') {
+        return head;
+    }
+    return nil;
+}
+
+// 去掉行首时间戳前缀（保留 pid= 及之后内容）。
+- (NSString *)logLineWithoutTimestamp:(NSString *)line {
+    NSString *ts = [self timestampFromLogLine:line];
+    if (!ts) return line;
+    // 时间戳后通常是 " +0800 "，跳过空格和时区
+    NSUInteger pos = ts.length;
+    while (pos < line.length && [[NSCharacterSet whitespaceCharacterSet] characterIsMember:[line characterAtIndex:pos]]) pos++;
+    if (pos + 5 <= line.length) {
+        // 跳过时区 "+0800"/"-0700"
+        unichar c = [line characterAtIndex:pos];
+        if (c == '+' || c == '-') {
+            pos += 6;
+        }
+    }
+    while (pos < line.length && [[NSCharacterSet whitespaceCharacterSet] characterIsMember:[line characterAtIndex:pos]]) pos++;
+    return [line substringFromIndex:pos];
 }
 
 - (NSArray<NSString *> *)lastLogLines:(NSUInteger)count {
@@ -335,12 +432,12 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     NSString *content = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
     if (!content.length) return @[];
     NSArray<NSString *> *all = [content componentsSeparatedByString:@"\n"];
-    // 去掉尾部空行，从后往前取
+    // 从后往前取，最新在最前
     NSMutableArray<NSString *> *result = [NSMutableArray array];
     NSInteger i = all.count - 1;
     while (i >= 0 && result.count < count) {
         NSString *line = [all[i] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if (line.length) [result insertObject:line atIndex:0];
+        if (line.length) [result addObject:line];
         i--;
     }
     return result;
@@ -442,7 +539,11 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
                                                             preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
-    [self refreshLogViewer];
+    // 清空后显示"已清空"，不自动重读（server 还在写，重读会有新日志）。
+    if (self.logTextView) {
+        self.logTextView.text = @"已清空";
+        self.logTimeLabel.text = @"";
+    }
 }
 
 @end
