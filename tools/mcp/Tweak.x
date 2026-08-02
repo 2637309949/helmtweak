@@ -82,6 +82,15 @@ static void ios_mcp_handle_control_notification(CFNotificationCenterRef center,
             return;
         }
         uint16_t port = ios_mcp_start_server();
+        if (!server.isRunning) {
+            // 启动失败（如端口占用）：回写 enabled=NO + 发 STOPPED，让 Settings 开关归位。
+            ios_mcp_write_enabled_preference(NO);
+            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                                IOS_MCP_DARWIN_NOTIFICATION_STOPPED,
+                                                NULL, NULL, true);
+            IOS_MCP_LOG(@"Start request FAILED (port %u busy); posted stopped", (unsigned int)port);
+            return;
+        }
         IOS_MCP_LOG(@"Received start request from Settings on port %u", (unsigned int)port);
         return;
     }

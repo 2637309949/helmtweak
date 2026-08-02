@@ -1,13 +1,14 @@
 // MCPPrefsListController — MCP 工具子面板
 //
-// 事件驱动状态：状态以 MCP 服务为准。
-//   - 点击启动/关闭 -> 立即变"启动中/关闭中"不可点，发 darwin 事件给 MCP
-//   - MCP 完成 -> 回 STARTED/STOPPED 事件，这里收到即更新按钮
+// 蓝牙式开关：PSSwitchCell 绑定 enabled pref。
+//   - 用户拨动开关 -> Preferences 框架调 setPreferenceValue:specifier:（iOS 15+ action: 不触发，走这里）
+//   - 这里转发 START/STOP darwin 事件给 MCP，立即挂转圈（模拟系统开关等待态）
+//   - MCP 完成 -> 回 STARTED/STOPPED 事件 -> 恢复开关真实状态（转圈停）
 //   - 3s 无回执 -> 发 CHECK 事件让 MCP 传回最新状态（应对启动中被打断）
 //   - 进面板时读 serverStatus，中间态则发 CHECK
 //
-// PSButtonCell title 刷新用 [spec setName:] + [self reload]。
-// setProperty:forKey:@"label" + reloadSpecifier:animated: 在 iOS 15+ 不重画 title（1.0.17/1.0.18 已确认）。
+// 开关位置转圈：loading 时把 cell 的 accessoryView（UISwitch）换成 spinner，
+// 完成时换回 UISwitch 并按 enabled pref 恢复 on 值。
 
 #import <Preferences/Preferences.h>
 #import <UIKit/UIKit.h>
@@ -29,6 +30,7 @@
 @property (nonatomic, assign) BOOL waitingForStop;
 @property (nonatomic, assign) CFTimeInterval toggleTimestamp;
 @property (nonatomic, assign) BOOL finalizeScheduled;
+@property (nonatomic, strong) UISwitch *toggleSwitch;
 @end
 
 @implementation MCPPrefsListController
@@ -53,10 +55,15 @@
     }
 }
 
-// 验证 PSSwitchCell 拨动时是否走到这里（iOS 15+ action: 不触发，看 setPreferenceValue: 是否可靠）。
+// 用户拨动开关时，Preferences 框架调这里（iOS 15+ action: 不触发，已验证走这条路）。
+// 只在 mcpToggleButton（MCP 服务）上接管，其余开关（启动日志等）直接透传。
 - (void)setPreferenceValue:(id)value specifier:(PSSpecifier *)spec {
-    // 注意：只读 spec.name，不读 id/property（会 SIGABRT，见 CLAUDE.md gotchas）。
-    [self logPrefs:@"setPreferenceValue spec.name=%@ value=%@", [spec name], value];
+    NSString *name = [spec name];
+    BOOL isToggle = [name isEqualToString:@"MCP 服务"];
+    if (isToggle) {
+        [self logPrefs:@"toggle to %@", value];
+        [self handleToggleRequest:[value boolValue]];
+    }
     [super setPreferenceValue:value specifier:spec];
 }
 
@@ -122,8 +129,8 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     }
 }
 
-// 收到 MCP 事件后恢复按钮。为保证"启动中/关闭中"中间态用户可见，
-// 若距离点击不足 1 秒，延迟到满 1 秒再恢复（否则启动太快事件秒回，中间态一闪而过）。
+// 收到 MCP 事件后恢复开关。为保证转圈状态用户可见，
+// 若距离拨动不足 1 秒，延迟到满 1 秒再恢复（否则启动太快事件秒回，转圈一闪而过）。
 - (void)handleServerEventStarted {
     [self finishToggleToRunning:YES];
 }
@@ -150,17 +157,14 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     [self applyButtonForRunning:running];
 }
 
+// 恢复开关：写 enabled pref（PSSwitchCell 显示以此为准），换回 UISwitch。
 - (void)applyButtonForRunning:(BOOL)running {
     self.waitingForStart = NO;
     self.waitingForStop = NO;
     self.serverRunning = running;
     [self writeEnabledPref:running];
     [self setButtonLoading:NO];
-    // 验证版：不改写 label，PSSwitchCell 保持「MCP 服务」固定文案。
-    PSSpecifier *s = [self specifierForID:@"mcpToggleButton"];
-    if (s) {
-        [self reload];
-    }
+    self.toggleSwitch.on = running;
 }
 
 - (void)writeEnabledPref:(BOOL)on {
@@ -189,21 +193,29 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     return [status isEqualToString:@"started"];
 }
 
-// 给 mcpToggleButton 的 cell 加/去转圈 spinner（模拟系统开关等待态）。
+// 开关位置转圈：loading 时把 mcpToggleButton 的 cell 的 accessoryView（UISwitch）换成 spinner，
+// 完成时换回原 UISwitch（on 值由调用方在 applyButtonForRunning 里设置）。
 - (void)setButtonLoading:(BOOL)loading {
     UITableView *table = [self valueForKey:@"table"];
     if (!table) return;
     for (UITableViewCell *cell in [table visibleCells]) {
-        if (![cell.textLabel.text isEqualToString:@"启动中..."] &&
-            ![cell.textLabel.text isEqualToString:@"关闭中..."]) {
+        if (![cell.textLabel.text isEqualToString:@"MCP 服务"]) {
             continue;
         }
         if (loading) {
+            if (self.toggleSwitch) {
+                // 已有引用，无需重复保存
+            } else if ([cell.accessoryView isKindOfClass:[UISwitch class]]) {
+                self.toggleSwitch = (UISwitch *)cell.accessoryView;
+            }
             UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
             [spinner startAnimating];
             cell.accessoryView = spinner;
         } else {
-            cell.accessoryView = nil;
+            if (self.toggleSwitch) {
+                cell.accessoryView = self.toggleSwitch;
+                self.toggleSwitch.on = self.serverRunning;
+            }
         }
     }
 }
@@ -229,11 +241,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
 
     self.serverRunning = isUp;
     [self setButtonLoading:NO];
-    // 验证版：不改写 label。
-    PSSpecifier *s = [self specifierForID:@"mcpToggleButton"];
-    if (s) {
-        [self reload];
-    }
+    self.toggleSwitch.on = isUp;
 }
 
 // 3s 兜底定时器：等待事件回执期间超时后，发 CHECK 确认最新状态。
@@ -252,15 +260,13 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     });
 }
 
-- (void)toggleServer:(PSSpecifier *)spec {
-    // 事件驱动：点击立即进入"启动中/关闭中"并不可点，发事件给 MCP。
-    // MCP 完成后回 STARTED/STOPPED 事件，这里收到即更新；3s 无回执则发 CHECK。
+// 用户拨动开关（经 setPreferenceValue: 转发）：立即进入等待态并转圈，发事件给 MCP。
+// MCP 完成后回 STARTED/STOPPED 事件，这里收到即恢复；3s 无回执则发 CHECK。
+- (void)handleToggleRequest:(BOOL)wantStart {
     if (self.waitingForStart || self.waitingForStop) {
-        return;  // 等待中不可重复点击
+        return;  // 等待中忽略重复拨动
     }
 
-    BOOL wantStart = ![self serverRunningByStatus];
-    [self writeEnabledPref:wantStart];
     self.toggleTimestamp = CACurrentMediaTime();
     self.finalizeScheduled = NO;
 
@@ -277,19 +283,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
         self.waitingForStop = YES;
     }
 
-    PSSpecifier *s = [self specifierForID:@"mcpToggleButton"];
-    if (s) {
-        [s setName:wantStart ? @"启动中..." : @"关闭中..."];
-        [self reload];
-    }
-
-    __weak typeof(self) weakSpin = self;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        __strong typeof(weakSpin) self = weakSpin;
-        if (self) [self setButtonLoading:YES];
-    });
-
+    [self setButtonLoading:YES];
     [self scheduleStatusTimeout];
 }
 
