@@ -305,7 +305,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     self.logRefreshButton = btn;
 
     UILabel *log = [[UILabel alloc] initWithFrame:CGRectZero];
-    log.numberOfLines = 8;
+    log.numberOfLines = 12;
     log.lineBreakMode = NSLineBreakByTruncatingTail;
     log.backgroundColor = [UIColor clearColor];
     log.textColor = [UIColor secondaryLabelColor];
@@ -317,7 +317,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     self.logFooterView = footer;
 }
 
-// footer 固定高度：8 条日志 + 顶部行。所有 frame 在此用当前 table 宽度统一计算。
+// footer 固定高度：12 条日志 + 顶部行。所有 frame 在此用当前 table 宽度统一计算。
 - (void)layoutLogFooter {
     UITableView *table = [self valueForKey:@"table"];
     if (!table || !self.logFooterView) return;
@@ -326,7 +326,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     CGFloat inset = 16.0;
     CGFloat footerTop = 8.0;       // 距最后一行间距
     CGFloat headerH = 20.0;        // 顶部时间+刷新行高
-    CGFloat logH = 120.0;          // 8 行日志高度
+    CGFloat logH = 180.0;          // 12 行日志高度
     CGFloat btnW = 56.0;
 
     CGRect f = self.logFooterView.frame;
@@ -392,13 +392,13 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     });
 }
 
-// 读 ios-mcp.log 最近 5 条，倒序（最新在前）写入 textView。
+// 读 ios-mcp.log 最近 12 条，倒序（最新在前）写入 textView。
 // 仅最新一条保留完整时间戳显示在左上角，其余行去掉时间前缀。
 // 仅在当前看板 + 日志开关开时执行。
 - (void)refreshLogViewer {
     if (![self debugLoggingEnabled]) return;
     if (!(self.isViewLoaded && self.view.window != nil)) return;  // 不在当前看板不读
-    NSArray<NSString *> *lines = [self lastLogLines:5];  // 最新在前
+    NSArray<NSString *> *lines = [self lastLogLines:12];  // 最新在前
     if (!lines.count) {
         self.logTextLabel.text = @"";
         self.logTimeLabel.text = @"暂无日志，点右上角刷新";
