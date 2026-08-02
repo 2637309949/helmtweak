@@ -409,10 +409,12 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     self.logTimeLabel.text = newestTime ?: @"";
 
     // 每行都去掉时间戳+pid，只留 message（时间统一显示在左上角 label）。
+    // 单行超宽截断加省略号，不换行。
     NSMutableArray<NSString *> *display = [NSMutableArray array];
+    CGFloat maxWidth = self.logTextLabel.bounds.size.width;
     for (NSString *line in lines) {
         NSString *clean = [self logLineWithoutTimestamp:line];
-        if (clean.length) [display addObject:clean];
+        if (clean.length) [display addObject:[self truncateString:clean toWidth:maxWidth]];
     }
     if (display.count) {
         self.logTextLabel.text = [display componentsJoinedByString:@"\n"];
@@ -420,6 +422,20 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
         self.logTextLabel.text = @"";
         self.logTimeLabel.text = @"暂无日志，点右上角刷新";
     }
+}
+
+// 单行日志超宽截断：末尾加省略号，不换行。maxWidth<=0 时原样返回。
+- (NSString *)truncateString:(NSString *)string toWidth:(CGFloat)maxWidth {
+    if (maxWidth <= 0) return string;
+    UIFont *font = self.logTextLabel.font;
+    if ([string sizeWithAttributes:@{NSFontAttributeName: font}].width <= maxWidth) return string;
+    NSMutableString *ms = [string mutableCopy];
+    while (ms.length > 1) {
+        [ms deleteCharactersInRange:NSMakeRange(ms.length - 1, 1)];
+        NSString *cand = [ms stringByAppendingString:@"…"];
+        if ([cand sizeWithAttributes:@{NSFontAttributeName: font}].width <= maxWidth) return cand;
+    }
+    return @"…";
 }
 
 // 从日志行头部提取时间戳，如 "2026-08-02 13:42:00 +0000"。
