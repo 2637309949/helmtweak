@@ -323,36 +323,29 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
 }
 
 // footer 高度 = 表格剩余空间：table 高度 - 所有 cell 行高之和 - 分组头尾 - 顶部留白。
-// 用 row 高度求和，避免 footer 自身影响 contentSize 的循环依赖。不同设备自适应。
+// footer 高度 = 表格可视高度 - 内容高度（真实 cell 高度，用 contentSize 测量），不超屏、不同设备自适应。
 - (void)layoutLogFooter {
     UITableView *table = [self valueForKey:@"table"];
     if (!table || !self.logFooterView) return;
 
-    CGFloat tableH = table.bounds.size.height;
-    CGFloat used = 0.0;
-    NSInteger sections = [table numberOfSections];
-    for (NSInteger s = 0; s < sections; s++) {
-        used += [table rectForHeaderInSection:s].size.height;
-        used += [table rectForFooterInSection:s].size.height;
-        NSInteger rows = [table numberOfRowsInSection:s];
-        for (NSInteger r = 0; r < rows; r++) {
-            used += [table rectForRowAtIndexPath:
-                     [NSIndexPath indexPathForRow:r inSection:s]].size.height;
-        }
-    }
+    // 临时摘掉 footer，量真实内容高度（不含 footer 自身，避免循环依赖）
+    table.tableFooterView = nil;
+    [table layoutIfNeeded];
+    CGFloat contentH = table.contentSize.height;
 
+    CGFloat tableH = table.bounds.size.height;
     CGFloat footerTop = 12.0;      // 距最后一行间距
-    CGFloat headerH = 26.0;        // 顶部时间+刷新行高（与 buildLogFooter 的容器 y 对应）
-    CGFloat gap = 2.0;
+    CGFloat headerH = 26.0;        // 顶部时间+刷新行高
     CGFloat minH = 120.0;          // 最小高度（内容区）
-    CGFloat avail = tableH - used - footerTop - headerH - gap;
+    CGFloat avail = tableH - contentH - footerTop - headerH;
     if (avail < minH) avail = minH;
 
     CGRect f = self.logFooterView.frame;
     f.size.height = footerTop + headerH + avail;
     self.logFooterView.frame = f;
     self.logTextView.frame = CGRectMake(16, footerTop + headerH, f.size.width - 32, avail);
-    table.tableFooterView = self.logFooterView;  // 重设以触发重排
+    table.tableFooterView = self.logFooterView;
+    [table layoutIfNeeded];
 }
 
 // 「刷新」按钮：点击转圈刷新日志。
