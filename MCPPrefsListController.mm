@@ -289,7 +289,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     UILabel *time = [[UILabel alloc] initWithFrame:CGRectZero];
     time.font = [UIFont systemFontOfSize:13.0];
     time.textColor = [UIColor secondaryLabelColor];
-    time.text = @"";
+    time.text = @"暂无日志，点右上角刷新";
     [footer addSubview:time];
     self.logTimeLabel = time;
 
@@ -309,7 +309,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     log.backgroundColor = [UIColor clearColor];
     log.textColor = [UIColor secondaryLabelColor];
     log.font = [UIFont systemFontOfSize:11.0];
-    log.text = @"（暂无日志，点右上角刷新）";
+    log.text = @"";
     [footer addSubview:log];
     self.logTextLabel = log;
 
@@ -391,8 +391,8 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     if (!(self.isViewLoaded && self.view.window != nil)) return;  // 不在当前看板不读
     NSArray<NSString *> *lines = [self lastLogLines:5];  // 最新在前
     if (!lines.count) {
-        self.logTextLabel.text = @"（暂无日志）";
-        self.logTimeLabel.text = @"";
+        self.logTextLabel.text = @"";
+        self.logTimeLabel.text = @"暂无日志，点右上角刷新";
         return;
     }
 
@@ -405,7 +405,12 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
         NSString *clean = [self logLineWithoutTimestamp:line];
         if (clean.length) [display addObject:clean];
     }
-    self.logTextLabel.text = display.count ? [display componentsJoinedByString:@"\n"] : @"（暂无日志）";
+    if (display.count) {
+        self.logTextLabel.text = [display componentsJoinedByString:@"\n"];
+    } else {
+        self.logTextLabel.text = @"";
+        self.logTimeLabel.text = @"暂无日志，点右上角刷新";
+    }
 }
 
 // 从日志行头部提取时间戳，如 "2026-08-02 13:42:00 +0000"。
