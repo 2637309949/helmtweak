@@ -331,10 +331,12 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     f.size.height = footerTop + headerH + logH;
     self.logFooterView.frame = f;
 
-    // 时间：左对齐 x=inset，与分组标题同缘
-    self.logTimeLabel.frame = CGRectMake(inset, footerTop, width - inset * 2 - btnW, headerH);
-    // 刷新按钮：右缘对齐开关左缘（开关宽 51，右边距 inset）
-    self.logRefreshButton.frame = CGRectMake(width - inset - 51 - btnW, footerTop, btnW, headerH);
+    // 时间：左对齐 x=inset，宽度到刷新按钮左侧，避免与按钮重叠
+    CGFloat switchLeftEdge = width - 83;  // 开关左缘 (375-83=292)
+    CGFloat btnX = switchLeftEdge - btnW; // 按钮左缘
+    self.logTimeLabel.frame = CGRectMake(inset, footerTop, btnX - inset - 8, headerH);
+    // 刷新按钮：右缘对齐开关左缘
+    self.logRefreshButton.frame = CGRectMake(btnX, footerTop, btnW, headerH);
     // 日志区
     self.logTextLabel.frame = CGRectMake(inset, footerTop + headerH, width - inset * 2, logH);
 
