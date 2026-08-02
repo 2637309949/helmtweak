@@ -334,10 +334,22 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     // 文本左缘基准：设置项标题在 x=32（16 卡片边距 + 16 文本内边距）。
     // 时间戳与日志区与标题行严格左对齐。
     CGFloat textX = inset + 16;          // 32pt，与"服务/启动日志"文本左缘一致
-    CGFloat switchLeftEdge = width - 83; // 开关左缘 (375-83=292)
-    CGFloat btnX = switchLeftEdge - btnW; // 按钮左缘
+
+    // 刷新按钮右缘 = 上面开关行 UISwitch 的真实右缘（与开关右对齐）。
+    // 取当前可见的任一 UISwitch accessory 右缘；滚动后看不到开关时退回标准边距。
+    CGFloat switchRight = width - inset; // 默认：开关右缘 = 卡片右边距
+    for (UITableViewCell *cell in [table visibleCells]) {
+        if ([cell.accessoryView isKindOfClass:[UISwitch class]]) {
+            CGRect accessoryFrame = [table convertRect:cell.accessoryView.frame
+                                              fromView:cell.accessoryView.superview];
+            switchRight = CGRectGetMaxX(accessoryFrame);
+            break;
+        }
+    }
+    CGFloat btnX = switchRight - btnW;   // 刷新按钮右缘 = 开关右缘
+
     self.logTimeLabel.frame = CGRectMake(textX, footerTop, btnX - textX - 8, headerH);
-    // 刷新按钮：右缘对齐开关左缘
+    // 刷新按钮：右缘与上面开关行的 UISwitch 右缘对齐
     self.logRefreshButton.frame = CGRectMake(btnX, footerTop, btnW, headerH);
     // 日志区：与标题行左对齐
     self.logTextLabel.frame = CGRectMake(textX, footerTop + headerH, width - textX - inset, logH);

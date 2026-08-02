@@ -6,6 +6,7 @@ Project memory for fast pickup. Read this before touching the build.
 
 - **不要写设计文档 / spec 文档**：brainstorming 到「present design」一步为止，口述方案给用户，用户说 OK 就直接开始 code。跳过 writing-plans / executing-plans / spec 文档落盘这些步骤。
 - 例外：用户明确说「写文档」才写。
+- **手机/截图/OCR/部署/诊断一律优先用 `scripts/` 下现有脚本**（`deploy.py`/`verify.py`/`diag.py`/`mcp.py`/`ui_test.py`/`ocr.bat`）。没有对应脚本就新建到 `scripts/`，不要每次临时写内联 python/ps1（PowerShell 引号转义坑多、且无法复用）。
 
 ## What this project IS (and is NOT)
 
