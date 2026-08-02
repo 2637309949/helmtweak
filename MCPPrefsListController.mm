@@ -369,7 +369,13 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
 
     UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc]
         initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-    spinner.frame = sender.bounds;
+    // 转圈与“刷新”文字同位置：按钮文字右对齐+底部对齐，按文字尺寸反推文字中心。
+    NSString *title = [sender titleForState:UIControlStateNormal];
+    CGSize ts = [title sizeWithAttributes:@{NSFontAttributeName: sender.titleLabel.font}];
+    CGRect titleFrame = CGRectMake(sender.bounds.size.width - ts.width,
+                                   sender.bounds.size.height - ts.height,
+                                   ts.width, ts.height);
+    spinner.frame = CGRectMake(CGRectGetMidX(titleFrame) - 10, CGRectGetMidY(titleFrame) - 10, 20, 20);
     [sender addSubview:spinner];
     [sender setTitle:@"" forState:UIControlStateNormal];
     [spinner startAnimating];

@@ -1,6 +1,6 @@
 Package: com.example.helmtweak
 Name: HelmTweak
-Version: 1.0.31
+Version: 1.0.32
 Architecture: iphoneos-arm64
 Description: HelmMCP (forked from witchan/ios-mcp, GPL-3.0) — MCP server in SpringBoard for AI phone control (screenshot/OCR/touch/text/app mgmt/filesystem) + AppSync Unified (GPL-3.0) + mcp-ldid (LGPL-2.1+) + libzip (BSD-3-Clause). Dopamine rootless (ElleKit). arm64 + arm64e.
 Maintainer: You <you@example.com>
