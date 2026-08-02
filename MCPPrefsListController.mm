@@ -32,7 +32,7 @@
 @property (nonatomic, assign) BOOL finalizeScheduled;
 @property (nonatomic, strong) UISwitch *toggleSwitch;
 @property (nonatomic, assign) BOOL logViewerInstalled;
-@property (nonatomic, strong) UITextView *logTextView;
+@property (nonatomic, strong) UILabel *logTextLabel;
 @property (nonatomic, strong) UIButton *logRefreshButton;
 @property (nonatomic, strong) UILabel *logTimeLabel;
 @property (nonatomic, strong) UIView *logFooterView;
@@ -287,16 +287,18 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, table.bounds.size.width, 200)];
     footer.autoresizingMask = UIViewAutoresizingFlexibleWidth;
 
-    // 顶部行：时间 label（左，与设置项 label 对齐）+ 刷新按钮（右），下方直接贴容器。
-    UILabel *time = [[UILabel alloc] initWithFrame:CGRectMake(inset, 2, 200, 22)];
-    time.font = [UIFont systemFontOfSize:12.0];
+    // 顶部行：时间 label（左，与分组标题同色字号）+ 刷新按钮（右，对齐开关左缘），下方日志区。
+    UILabel *time = [[UILabel alloc] initWithFrame:CGRectMake(inset, 2, 200, 20)];
+    time.font = [UIFont systemFontOfSize:13.0];
     time.textColor = [UIColor secondaryLabelColor];
     time.text = @"";
     [footer addSubview:time];
     self.logTimeLabel = time;
 
+    // 按钮右缘对齐 UISwitch 左缘（开关宽约 51pt，右边距 inset）
+    const CGFloat switchW = 51.0;
     UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
-    btn.frame = CGRectMake(footer.bounds.size.width - inset - 56, 0, 56, 24);
+    btn.frame = CGRectMake(footer.bounds.size.width - inset - switchW - 56, 0, 56, 24);
     btn.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
     [btn setTitle:@"刷新" forState:UIControlStateNormal];
     [btn.titleLabel setFont:[UIFont systemFontOfSize:13.0]];
@@ -304,48 +306,37 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     [footer addSubview:btn];
     self.logRefreshButton = btn;
 
-    // 容器紧跟顶部行下方（y=26），不空一大块
-    UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(inset, 26, footer.bounds.size.width - inset * 2, footer.bounds.size.height - 26 - 8)];
-    tv.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    tv.editable = NO;
-    tv.selectable = YES;
-    tv.scrollEnabled = YES;
-    tv.showsVerticalScrollIndicator = YES;
-    tv.backgroundColor = [UIColor clearColor];
-    tv.textColor = [UIColor labelColor];
-    tv.font = [UIFont systemFontOfSize:11.0];
-    tv.textContainerInset = UIEdgeInsetsMake(6, 6, 6, 6);
-    tv.text = @"（暂无日志，点右上角刷新）";
-    [footer addSubview:tv];
-    self.logTextView = tv;
+    // 日志区：UILabel 固定行数，每行尾截断不换行，8 行高度。
+    const CGFloat logLineH = 15.0;      // 11pt 字行高
+    const NSInteger logLines = 8;
+    UILabel *log = [[UILabel alloc] initWithFrame:CGRectMake(inset, 24, footer.bounds.size.width - inset * 2, logLineH * logLines)];
+    log.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    log.numberOfLines = logLines;
+    log.lineBreakMode = NSLineBreakByTruncatingTail;
+    log.backgroundColor = [UIColor clearColor];
+    log.textColor = [UIColor secondaryLabelColor];
+    log.font = [UIFont systemFontOfSize:11.0];
+    log.text = @"（暂无日志，点右上角刷新）";
+    [footer addSubview:log];
+    self.logTextLabel = log;
 
     self.logFooterView = footer;
 }
 
-// footer 高度 = 表格剩余空间：table 高度 - 所有 cell 行高之和 - 分组头尾 - 顶部留白。
-// footer 高度 = 表格可视高度 - 内容高度（真实 cell 高度，用 contentSize 测量），不超屏、不同设备自适应。
+// footer 固定高度：8 条日志 + 顶部行。UILabel 8 行高约 120pt。
 - (void)layoutLogFooter {
     UITableView *table = [self valueForKey:@"table"];
     if (!table || !self.logFooterView) return;
 
-    // 临时摘掉 footer，量真实内容高度（不含 footer 自身，避免循环依赖）
-    table.tableFooterView = nil;
-    [table layoutIfNeeded];
-    CGFloat contentH = table.contentSize.height;
-
-    CGFloat tableH = table.bounds.size.height;
     CGFloat footerTop = 12.0;      // 距最后一行间距
-    CGFloat headerH = 26.0;        // 顶部时间+刷新行高
-    CGFloat minH = 120.0;          // 最小高度（内容区）
-    CGFloat avail = tableH - contentH - footerTop - headerH;
-    if (avail < minH) avail = minH;
+    CGFloat headerH = 24.0;        // 顶部时间+刷新行高
+    CGFloat logH = 120.0;          // 8 行日志高度
 
     CGRect f = self.logFooterView.frame;
-    f.size.height = footerTop + headerH + avail;
+    f.size.height = footerTop + headerH + logH;
     self.logFooterView.frame = f;
-    self.logTextView.frame = CGRectMake(16, footerTop + headerH, f.size.width - 32, avail);
+    self.logTextLabel.frame = CGRectMake(16, footerTop + headerH, f.size.width - 32, logH);
     table.tableFooterView = self.logFooterView;
-    [table layoutIfNeeded];
 }
 
 // 「刷新」按钮：点击转圈刷新日志。
@@ -380,7 +371,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     if (!(self.isViewLoaded && self.view.window != nil)) return;  // 不在当前看板不读
     NSArray<NSString *> *lines = [self lastLogLines:5];  // 最新在前
     if (!lines.count) {
-        self.logTextView.text = @"（暂无日志）";
+        self.logTextLabel.text = @"（暂无日志）";
         self.logTimeLabel.text = @"";
         return;
     }
@@ -394,7 +385,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
         NSString *clean = [self logLineWithoutTimestamp:line];
         if (clean.length) [display addObject:clean];
     }
-    self.logTextView.text = display.count ? [display componentsJoinedByString:@"\n"] : @"（暂无日志）";
+    self.logTextLabel.text = display.count ? [display componentsJoinedByString:@"\n"] : @"（暂无日志）";
 }
 
 // 从日志行头部提取时间戳，如 "2026-08-02 13:42:00 +0000"。
@@ -557,8 +548,8 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
     // 清空后显示"已清空"，不自动重读（server 还在写，重读会有新日志）。
-    if (self.logTextView) {
-        self.logTextView.text = @"已清空";
+    if (self.logTextLabel) {
+        self.logTextLabel.text = @"已清空";
         self.logTimeLabel.text = @"";
     }
 }
