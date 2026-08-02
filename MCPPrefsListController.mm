@@ -321,8 +321,8 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
 
     CGFloat width = table.bounds.size.width;
     CGFloat inset = 16.0;
-    CGFloat footerTop = 12.0;      // 距最后一行间距
-    CGFloat headerH = 24.0;        // 顶部时间+刷新行高
+    CGFloat footerTop = 8.0;       // 距最后一行间距
+    CGFloat headerH = 20.0;        // 顶部时间+刷新行高
     CGFloat logH = 120.0;          // 8 行日志高度
     CGFloat btnW = 56.0;
 
@@ -331,14 +331,16 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     f.size.height = footerTop + headerH + logH;
     self.logFooterView.frame = f;
 
-    // 时间：左对齐 x=inset，宽度到刷新按钮左侧，避免与按钮重叠
-    CGFloat switchLeftEdge = width - 83;  // 开关左缘 (375-83=292)
+    // 文本左缘基准：设置项标题在 x=32（16 卡片边距 + 16 文本内边距）。
+    // 时间戳与日志区与标题行严格左对齐。
+    CGFloat textX = inset + 16;          // 32pt，与"服务/启动日志"文本左缘一致
+    CGFloat switchLeftEdge = width - 83; // 开关左缘 (375-83=292)
     CGFloat btnX = switchLeftEdge - btnW; // 按钮左缘
-    self.logTimeLabel.frame = CGRectMake(inset, footerTop, btnX - inset - 8, headerH);
+    self.logTimeLabel.frame = CGRectMake(textX, footerTop, btnX - textX - 8, headerH);
     // 刷新按钮：右缘对齐开关左缘
     self.logRefreshButton.frame = CGRectMake(btnX, footerTop, btnW, headerH);
-    // 日志区
-    self.logTextLabel.frame = CGRectMake(inset, footerTop + headerH, width - inset * 2, logH);
+    // 日志区：与标题行左对齐
+    self.logTextLabel.frame = CGRectMake(textX, footerTop + headerH, width - textX - inset, logH);
 
     table.tableFooterView = self.logFooterView;
 }
