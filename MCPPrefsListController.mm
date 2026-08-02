@@ -312,8 +312,8 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     tv.selectable = YES;
     tv.scrollEnabled = YES;
     tv.showsVerticalScrollIndicator = YES;
-    tv.backgroundColor = [UIColor systemGroupedBackgroundColor];
-    tv.layer.cornerRadius = 8.0;
+    tv.backgroundColor = [UIColor clearColor];
+    tv.textColor = [UIColor labelColor];
     tv.font = [UIFont systemFontOfSize:11.0];
     tv.textContainerInset = UIEdgeInsetsMake(6, 6, 6, 6);
     tv.text = @"（暂无日志，点右上角刷新）";
