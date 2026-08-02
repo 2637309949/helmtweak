@@ -287,9 +287,8 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, table.bounds.size.width, 200)];
     footer.autoresizingMask = UIViewAutoresizingFlexibleWidth;
 
-    // 顶部行：时间 label（左，与容器文字对齐）+ 刷新按钮（右），下方直接贴容器。
-    const CGFloat textInset = 6.0;  // 与 textView textContainerInset 对齐
-    UILabel *time = [[UILabel alloc] initWithFrame:CGRectMake(inset + textInset, 2, 200, 22)];
+    // 顶部行：时间 label（左，与设置项 label 对齐）+ 刷新按钮（右），下方直接贴容器。
+    UILabel *time = [[UILabel alloc] initWithFrame:CGRectMake(inset, 2, 200, 22)];
     time.font = [UIFont systemFontOfSize:12.0];
     time.textColor = [UIColor secondaryLabelColor];
     time.text = @"";
