@@ -299,6 +299,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     [btn.titleLabel setFont:[UIFont systemFontOfSize:13.0]];
     // 文字右对齐，贴按钮右缘：按钮右缘=开关右缘，文字右缘才能与开关右缘对齐
     btn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentRight;
+    btn.contentVerticalAlignment = UIControlContentVerticalAlignmentBottom;
     [btn addTarget:self action:@selector(refreshLogsTapped:) forControlEvents:UIControlEventTouchUpInside];
     [footer addSubview:btn];
     self.logRefreshButton = btn;
@@ -350,7 +351,9 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     }
     CGFloat btnX = switchRight - btnW;   // 刷新按钮右缘 = 开关右缘
 
-    self.logTimeLabel.frame = CGRectMake(textX, footerTop, btnX - textX - 8, headerH);
+    // 时间/刷新文字在各自框内底部对齐（不垂直居中），与下方日志区衔接更自然。
+    CGFloat lineH = self.logTimeLabel.font.lineHeight;
+    self.logTimeLabel.frame = CGRectMake(textX, footerTop + headerH - lineH, btnX - textX - 8, lineH);
     // 刷新按钮：右缘与上面开关行的 UISwitch 右缘对齐
     self.logRefreshButton.frame = CGRectMake(btnX, footerTop, btnW, headerH);
     // 日志区：与标题行左对齐
