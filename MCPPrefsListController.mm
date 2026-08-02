@@ -155,7 +155,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
             continue;
         }
         if (loading) {
-            UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray];
+            UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
             [spinner startAnimating];
             cell.accessoryView = spinner;
         } else {
