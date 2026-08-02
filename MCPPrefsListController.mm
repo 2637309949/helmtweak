@@ -32,8 +32,9 @@
 @property (nonatomic, assign) BOOL finalizeScheduled;
 @property (nonatomic, strong) UISwitch *toggleSwitch;
 @property (nonatomic, assign) BOOL logViewerInstalled;
-@property (nonatomic, weak) UITextView *logTextView;
-@property (nonatomic, weak) UIButton *logRefreshButton;
+@property (nonatomic, strong) UITextView *logTextView;
+@property (nonatomic, strong) UIButton *logRefreshButton;
+@property (nonatomic, strong) UIView *logFooterView;
 @end
 
 @implementation MCPPrefsListController
@@ -48,90 +49,7 @@
             }
         }
     }
-    if ([self isLogViewerRow:indexPath]) {
-        [self configureLogViewerCell:cell];
-    }
     return cell;
-}
-
-- (BOOL)isLogViewerRow:(NSIndexPath *)indexPath {
-    PSSpecifier *spec = [self specifierForID:@"logViewerCell"];
-    if (!spec) return NO;
-    NSUInteger idx = [[self specifiers] indexOfObject:spec];
-    return idx != NSNotFound && indexPath.section == 0 && (NSInteger)idx == indexPath.row;
-}
-
-// 日志 cell：灰底圆角多行文本 + 右上角「刷新」按钮。
-- (void)configureLogViewerCell:(UITableViewCell *)cell {
-    cell.textLabel.text = @"";  // 隐藏原 label
-
-    UITextView *tv = [cell.contentView viewWithTag:4201];
-    if (!tv) {
-        CGFloat inset = 16.0;
-        tv = [[UITextView alloc] initWithFrame:CGRectMake(inset, 6, cell.contentView.bounds.size.width - inset * 2, 108)];
-        tv.tag = 4201;
-        tv.editable = NO;
-        tv.selectable = YES;
-        tv.scrollEnabled = YES;
-        tv.showsVerticalScrollIndicator = YES;
-        tv.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
-        tv.layer.cornerRadius = 8.0;
-        tv.font = [UIFont systemFontOfSize:11.0];
-        tv.textContainerInset = UIEdgeInsetsMake(6, 6, 6, 6);
-        [cell.contentView addSubview:tv];
-        self.logTextView = tv;
-
-        UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
-        btn.tag = 4202;
-        btn.frame = CGRectMake(cell.contentView.bounds.size.width - inset - 52, 10, 52, 24);
-        [btn setTitle:@"刷新" forState:UIControlStateNormal];
-        [btn.titleLabel setFont:[UIFont systemFontOfSize:13.0]];
-        [btn addTarget:self action:@selector(refreshLogsTapped:) forControlEvents:UIControlEventTouchUpInside];
-        [cell.contentView addSubview:btn];
-        self.logRefreshButton = btn;
-    }
-    // cell 渲染时填充一次当前日志（开关已开则显示内容）
-    if ([self debugLoggingEnabled]) {
-        [self refreshLogViewer];
-    }
-}
-
-// 「刷新」按钮：点击转圈刷新日志。
-- (void)refreshLogsTapped:(UIButton *)sender {
-    if (self.logViewerInstalled) return;  // 正在刷新
-    self.logViewerInstalled = YES;
-
-    UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc]
-        initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-    spinner.frame = sender.bounds;
-    spinner.tag = 4203;
-    [sender addSubview:spinner];
-    [sender setTitle:@"" forState:UIControlStateNormal];
-    [spinner startAnimating];
-
-    __weak typeof(self) weakSelf = self;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        __strong typeof(weakSelf) self = weakSelf;
-        if (!self) return;
-        [self refreshLogViewer];
-        self.logViewerInstalled = NO;
-        for (UIView *v in sender.subviews) {
-            if (v.tag == 4203) {
-                [v removeFromSuperview];
-                break;
-            }
-        }
-        [sender setTitle:@"刷新" forState:UIControlStateNormal];
-    });
-}
-
-// 日志 cell 高度：5 行约 120pt。
-- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
-    if ([self isLogViewerRow:indexPath]) {
-        return 120.0;
-    }
-    return [super tableView:tableView heightForRowAtIndexPath:indexPath];
 }
 
 // 验证用：NSLog 进 unified log 手机上读不到，写文件。
@@ -163,8 +81,8 @@
     if (isToggle) {
         [self logPrefs:@"toggle to %@", value];
         [self handleToggleRequest:[value boolValue]];
-    } else if (isLogging && [value boolValue]) {
-        [self refreshLogViewer];
+    } else if (isLogging) {
+        [self updateLogFooter];
     }
     [super setPreferenceValue:value specifier:spec];
 }
@@ -180,9 +98,7 @@
     [super viewWillAppear:animated];
     [self registerControlObservers];
     [self refreshServerStatus];
-    if ([self debugLoggingEnabled]) {
-        [self refreshLogViewer];
-    }
+    [self updateLogFooter];
 }
 
 - (void)viewWillDisappear:(BOOL)animated {
@@ -334,6 +250,73 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     }
     if (v) CFRelease(v);
     return on;
+}
+
+// 日志 footer 只在「启动日志」开关打开时挂到 table 底部。
+- (void)updateLogFooter {
+    UITableView *table = [self valueForKey:@"table"];
+    if (!table) return;
+    if ([self debugLoggingEnabled]) {
+        if (!self.logFooterView) {
+            CGFloat width = table.bounds.size.width;
+            CGFloat inset = 16.0;
+            UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, width, 140)];
+            footer.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+
+            UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(inset, 8, width - inset * 2, 120)];
+            tv.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+            tv.editable = NO;
+            tv.selectable = YES;
+            tv.scrollEnabled = YES;
+            tv.showsVerticalScrollIndicator = YES;
+            tv.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
+            tv.layer.cornerRadius = 8.0;
+            tv.font = [UIFont systemFontOfSize:11.0];
+            tv.textContainerInset = UIEdgeInsetsMake(6, 6, 6, 6);
+            tv.text = @"（暂无日志，点右上角刷新）";
+            [footer addSubview:tv];
+            self.logTextView = tv;
+
+            UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
+            btn.frame = CGRectMake(width - inset - 56, 12, 56, 26);
+            btn.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
+            [btn setTitle:@"刷新" forState:UIControlStateNormal];
+            [btn.titleLabel setFont:[UIFont systemFontOfSize:13.0]];
+            [btn addTarget:self action:@selector(refreshLogsTapped:) forControlEvents:UIControlEventTouchUpInside];
+            [footer addSubview:btn];
+            self.logRefreshButton = btn;
+
+            self.logFooterView = footer;
+        }
+        table.tableFooterView = self.logFooterView;
+        [self refreshLogViewer];
+    } else {
+        table.tableFooterView = nil;
+    }
+}
+
+// 「刷新」按钮：点击转圈刷新日志。
+- (void)refreshLogsTapped:(UIButton *)sender {
+    if (self.logViewerInstalled) return;  // 正在刷新
+    self.logViewerInstalled = YES;
+
+    UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc]
+        initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+    spinner.frame = sender.bounds;
+    [sender addSubview:spinner];
+    [sender setTitle:@"" forState:UIControlStateNormal];
+    [spinner startAnimating];
+
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        __strong typeof(weakSelf) self = weakSelf;
+        if (!self) return;
+        [self refreshLogViewer];
+        self.logViewerInstalled = NO;
+        [spinner removeFromSuperview];
+        [sender setTitle:@"刷新" forState:UIControlStateNormal];
+    });
 }
 
 // 读 ios-mcp.log 最后 5 行，写入 logTextView（仅在当前看板 + 日志开关开时）。
