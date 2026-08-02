@@ -87,6 +87,11 @@
         [self showLogFooter:[value boolValue]];
     }
     [super setPreferenceValue:value specifier:spec];
+
+    // 服务/启动日志开关状态变化后自动刷新日志（仅日志开启时有效，刷新时按钮转圈）。
+    if ((isToggle || isLogging) && [self debugLoggingEnabled]) {
+        [self performLogRefreshWithButton:self.logRefreshButton];
+    }
 }
 
 - (NSArray *)specifiers {
@@ -283,7 +288,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
 
 // 构建日志 footer：只创建控件，frame 统一在 layoutLogFooter 里按当前真实宽度计算。
 - (void)buildLogFooterWithTable:(UITableView *)table {
-    UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, table.bounds.size.width, 160)];
+    UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, table.bounds.size.width, 253)];
     footer.autoresizingMask = UIViewAutoresizingFlexibleWidth;
 
     UILabel *time = [[UILabel alloc] initWithFrame:CGRectZero];
@@ -305,7 +310,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     self.logRefreshButton = btn;
 
     UILabel *log = [[UILabel alloc] initWithFrame:CGRectZero];
-    log.numberOfLines = 12;
+    log.numberOfLines = 15;
     log.lineBreakMode = NSLineBreakByTruncatingTail;
     log.backgroundColor = [UIColor clearColor];
     log.textColor = [UIColor secondaryLabelColor];
@@ -317,7 +322,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     self.logFooterView = footer;
 }
 
-// footer 固定高度：12 条日志 + 顶部行。所有 frame 在此用当前 table 宽度统一计算。
+// footer 固定高度：15 条日志 + 顶部行。所有 frame 在此用当前 table 宽度统一计算。
 - (void)layoutLogFooter {
     UITableView *table = [self valueForKey:@"table"];
     if (!table || !self.logFooterView) return;
@@ -326,7 +331,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     CGFloat inset = 16.0;
     CGFloat footerTop = 8.0;       // 距最后一行间距
     CGFloat headerH = 20.0;        // 顶部时间+刷新行高
-    CGFloat logH = 180.0;          // 12 行日志高度
+    CGFloat logH = 225.0;          // 15 行日志高度
     CGFloat btnW = 56.0;
 
     CGRect f = self.logFooterView.frame;
@@ -364,21 +369,29 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
 
 // 「刷新」按钮：点击转圈刷新日志。
 - (void)refreshLogsTapped:(UIButton *)sender {
+    [self performLogRefreshWithButton:sender];
+}
+
+// 转圈刷新日志：按钮转圈 + 0.3s 后刷新。button 传 nil 则只刷新不转圈。
+- (void)performLogRefreshWithButton:(UIButton *)button {
     if (self.logViewerInstalled) return;  // 正在刷新
     self.logViewerInstalled = YES;
 
-    UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc]
-        initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-    // 转圈与“刷新”文字同位置：按钮文字右对齐+底部对齐，按文字尺寸反推文字中心。
-    NSString *title = [sender titleForState:UIControlStateNormal];
-    CGSize ts = [title sizeWithAttributes:@{NSFontAttributeName: sender.titleLabel.font}];
-    CGRect titleFrame = CGRectMake(sender.bounds.size.width - ts.width,
-                                   sender.bounds.size.height - ts.height,
-                                   ts.width, ts.height);
-    spinner.frame = CGRectMake(CGRectGetMidX(titleFrame) - 10, CGRectGetMidY(titleFrame) - 10, 20, 20);
-    [sender addSubview:spinner];
-    [sender setTitle:@"" forState:UIControlStateNormal];
-    [spinner startAnimating];
+    UIActivityIndicatorView *spinner = nil;
+    if (button) {
+        spinner = [[UIActivityIndicatorView alloc]
+            initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+        // 转圈与“刷新”文字同位置：按钮文字右对齐+底部对齐，按文字尺寸反推文字中心。
+        NSString *title = [button titleForState:UIControlStateNormal];
+        CGSize ts = [title sizeWithAttributes:@{NSFontAttributeName: button.titleLabel.font}];
+        CGRect titleFrame = CGRectMake(button.bounds.size.width - ts.width,
+                                       button.bounds.size.height - ts.height,
+                                       ts.width, ts.height);
+        spinner.frame = CGRectMake(CGRectGetMidX(titleFrame) - 10, CGRectGetMidY(titleFrame) - 10, 20, 20);
+        [button addSubview:spinner];
+        [button setTitle:@"" forState:UIControlStateNormal];
+        [spinner startAnimating];
+    }
 
     __weak typeof(self) weakSelf = self;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
@@ -388,17 +401,17 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
         [self refreshLogViewer];
         self.logViewerInstalled = NO;
         [spinner removeFromSuperview];
-        [sender setTitle:@"刷新" forState:UIControlStateNormal];
+        if (button) [button setTitle:@"刷新" forState:UIControlStateNormal];
     });
 }
 
-// 读 ios-mcp.log 最近 12 条，倒序（最新在前）写入 textView。
+// 读 ios-mcp.log 最近 15 条，倒序（最新在前）写入 textView。
 // 仅最新一条保留完整时间戳显示在左上角，其余行去掉时间前缀。
 // 仅在当前看板 + 日志开关开时执行。
 - (void)refreshLogViewer {
     if (![self debugLoggingEnabled]) return;
     if (!(self.isViewLoaded && self.view.window != nil)) return;  // 不在当前看板不读
-    NSArray<NSString *> *lines = [self lastLogLines:12];  // 最新在前
+    NSArray<NSString *> *lines = [self lastLogLines:15];  // 最新在前
     if (!lines.count) {
         self.logTextLabel.text = @"";
         self.logTimeLabel.text = @"暂无日志，点右上角刷新";
