@@ -273,7 +273,14 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     }
 }
 
+// 是否正显示在当前 MCP 看板（view 加载且挂在窗口上 = 用户看得到）。
+- (BOOL)isMCPPanelVisible {
+    return self.isViewLoaded && self.view.window != nil;
+}
+
 // 开启启动日志时定时刷新日志 cell。用 NSTimer 轮询文件，避免动态构造 specifier。
+// 定时器只在 viewWillAppear 期间存在，viewWillDisappear 即停；回调内再做可见性判断，
+// 确保不在当前看板（被 push 覆盖/切后台）时不读文件。
 - (void)startLogTimerIfNeeded {
     BOOL logging = [self debugLoggingEnabled];
     if (!logging) return;
@@ -313,6 +320,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
 
 // 读 ios-mcp.log 最后 5 行，写入 logViewerCell。每次重新取 spec（reload 会重建对象）。
 - (void)refreshLogViewer {
+    if (![self isMCPPanelVisible]) return;  // 不在当前看板，不读日志
     PSSpecifier *s = [self specifierForID:@"logViewerCell"];
     if (!s) return;
     NSArray *lines = [self lastLogLines:5];
