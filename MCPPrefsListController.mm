@@ -27,6 +27,8 @@
 @property (nonatomic, assign) BOOL serverRunning;
 @property (nonatomic, assign) BOOL waitingForStart;
 @property (nonatomic, assign) BOOL waitingForStop;
+@property (nonatomic, assign) CFTimeInterval toggleTimestamp;
+@property (nonatomic, assign) BOOL finalizeScheduled;
 @end
 
 @implementation MCPPrefsListController
@@ -93,28 +95,43 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     }
 }
 
+// 收到 MCP 事件后恢复按钮。为保证"启动中/关闭中"中间态用户可见，
+// 若距离点击不足 1 秒，延迟到满 1 秒再恢复（否则启动太快事件秒回，中间态一闪而过）。
 - (void)handleServerEventStarted {
-    self.waitingForStart = NO;
-    self.waitingForStop = NO;
-    self.serverRunning = YES;
-    [self writeEnabledPref:YES];
-    [self setButtonLoading:NO];
-    PSSpecifier *s = [self specifierForID:@"mcpToggleButton"];
-    if (s) {
-        [s setName:@"关闭服务"];
-        [self reload];
-    }
+    [self finishToggleToRunning:YES];
 }
 
 - (void)handleServerEventStopped {
+    [self finishToggleToRunning:NO];
+}
+
+- (void)finishToggleToRunning:(BOOL)running {
+    NSTimeInterval elapsed = CACurrentMediaTime() - self.toggleTimestamp;
+    if ((self.waitingForStart || self.waitingForStop) && elapsed < 1.0) {
+        if (self.finalizeScheduled) return;  // 已有延迟任务在排队，忽略重复事件（如 CHECK 兜底回执）
+        self.finalizeScheduled = YES;
+        __weak typeof(self) weakSelf = self;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((1.0 - elapsed) * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            __strong typeof(weakSelf) self = weakSelf;
+            if (!self) return;
+            self.finalizeScheduled = NO;
+            [self applyButtonForRunning:running];
+        });
+        return;
+    }
+    [self applyButtonForRunning:running];
+}
+
+- (void)applyButtonForRunning:(BOOL)running {
     self.waitingForStart = NO;
     self.waitingForStop = NO;
-    self.serverRunning = NO;
-    [self writeEnabledPref:NO];
+    self.serverRunning = running;
+    [self writeEnabledPref:running];
     [self setButtonLoading:NO];
     PSSpecifier *s = [self specifierForID:@"mcpToggleButton"];
     if (s) {
-        [s setName:@"启动服务"];
+        [s setName:running ? @"关闭服务" : @"启动服务"];
         [self reload];
     }
 }
@@ -217,6 +234,8 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
 
     BOOL wantStart = ![self serverRunningByStatus];
     [self writeEnabledPref:wantStart];
+    self.toggleTimestamp = CACurrentMediaTime();
+    self.finalizeScheduled = NO;
 
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
                                         wantStart ? IOS_MCP_DARWIN_NOTIFICATION_START
