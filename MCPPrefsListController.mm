@@ -83,7 +83,8 @@
         [self logPrefs:@"toggle to %@", value];
         [self handleToggleRequest:[value boolValue]];
     } else if (isLogging) {
-        [self updateLogFooter];
+        // 用拨动目标值直接控制容器显示（此时 pref 还没写盘，不能读）。
+        [self showLogFooter:[value boolValue]];
     }
     [super setPreferenceValue:value specifier:spec];
 }
@@ -203,6 +204,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
 
 // 读服务端写的状态机（starting/started/stopping/stopped）。
 - (NSString *)serverStatusString {
+    CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
     NSString *status = @"stopped";
     CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("serverStatus"),
                                                      CFSTR("com.witchan.ios-mcp.preferences"));
@@ -248,6 +250,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
 }
 
 - (BOOL)debugLoggingEnabled {
+    CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
     CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("debugLoggingEnabled"),
                                                      CFSTR("com.witchan.ios-mcp.preferences"));
     BOOL on = NO;
@@ -260,9 +263,13 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
 
 // 日志 footer 只在「启动日志」开关打开时挂到 table 底部。
 - (void)updateLogFooter {
+    [self showLogFooter:[self debugLoggingEnabled]];
+}
+
+- (void)showLogFooter:(BOOL)show {
     UITableView *table = [self valueForKey:@"table"];
     if (!table) return;
-    if ([self debugLoggingEnabled]) {
+    if (show) {
         if (!self.logFooterView) {
             [self buildLogFooterWithTable:table];
         }
@@ -280,7 +287,9 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, table.bounds.size.width, 200)];
     footer.autoresizingMask = UIViewAutoresizingFlexibleWidth;
 
-    UILabel *time = [[UILabel alloc] initWithFrame:CGRectMake(inset, 4, 200, 24)];
+    // 顶部行：时间 label（左，与容器文字对齐）+ 刷新按钮（右），下方直接贴容器。
+    const CGFloat textInset = 6.0;  // 与 textView textContainerInset 对齐
+    UILabel *time = [[UILabel alloc] initWithFrame:CGRectMake(inset + textInset, 2, 200, 22)];
     time.font = [UIFont systemFontOfSize:12.0];
     time.textColor = [UIColor secondaryLabelColor];
     time.text = @"";
@@ -288,7 +297,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     self.logTimeLabel = time;
 
     UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
-    btn.frame = CGRectMake(footer.bounds.size.width - inset - 56, 2, 56, 26);
+    btn.frame = CGRectMake(footer.bounds.size.width - inset - 56, 0, 56, 24);
     btn.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
     [btn setTitle:@"刷新" forState:UIControlStateNormal];
     [btn.titleLabel setFont:[UIFont systemFontOfSize:13.0]];
@@ -296,7 +305,8 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     [footer addSubview:btn];
     self.logRefreshButton = btn;
 
-    UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(inset, 32, footer.bounds.size.width - inset * 2, footer.bounds.size.height - 40)];
+    // 容器紧跟顶部行下方（y=26），不空一大块
+    UITextView *tv = [[UITextView alloc] initWithFrame:CGRectMake(inset, 26, footer.bounds.size.width - inset * 2, footer.bounds.size.height - 26 - 8)];
     tv.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     tv.editable = NO;
     tv.selectable = YES;
@@ -332,9 +342,9 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
         }
     }
 
-    CGFloat footerTop = 20.0;      // 距最后一行间距
-    CGFloat headerH = 32.0;        // 顶部时间+刷新行高
-    CGFloat gap = 8.0;
+    CGFloat footerTop = 12.0;      // 距最后一行间距
+    CGFloat headerH = 26.0;        // 顶部时间+刷新行高（与 buildLogFooter 的容器 y 对应）
+    CGFloat gap = 2.0;
     CGFloat minH = 120.0;          // 最小高度（内容区）
     CGFloat avail = tableH - used - footerTop - headerH - gap;
     if (avail < minH) avail = minH;
@@ -386,15 +396,13 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     NSString *newestTime = [self timestampFromLogLine:lines.firstObject];
     self.logTimeLabel.text = newestTime ?: @"";
 
+    // 每行都去掉时间戳+pid，只留 message（时间统一显示在左上角 label）。
     NSMutableArray<NSString *> *display = [NSMutableArray array];
-    for (NSUInteger i = 0; i < lines.count; i++) {
-        if (i == 0) {
-            [display addObject:lines[i]];          // 最新一条带完整时间
-        } else {
-            [display addObject:[self logLineWithoutTimestamp:lines[i]]];
-        }
+    for (NSString *line in lines) {
+        NSString *clean = [self logLineWithoutTimestamp:line];
+        if (clean.length) [display addObject:clean];
     }
-    self.logTextView.text = [display componentsJoinedByString:@"\n"];
+    self.logTextView.text = display.count ? [display componentsJoinedByString:@"\n"] : @"（暂无日志）";
 }
 
 // 从日志行头部提取时间戳，如 "2026-08-02 13:42:00 +0000"。
@@ -409,27 +417,44 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     return nil;
 }
 
-// 去掉行首时间戳前缀（保留 pid= 及之后内容）。
+// 去掉行首时间戳和 pid= 前缀，只留 message。日志格式: "YYYY-MM-DD HH:MM:SS.mmm+0800 pid=36211 message"
 - (NSString *)logLineWithoutTimestamp:(NSString *)line {
+    // 找 pid= 位置
+    NSRange pidRange = [line rangeOfString:@"pid="];
+    if (pidRange.location != NSNotFound) {
+        NSUInteger msgPos = pidRange.location + pidRange.length;
+        // 跳过 pid 数字
+        while (msgPos < line.length && [[NSCharacterSet decimalDigitCharacterSet] characterIsMember:[line characterAtIndex:msgPos]]) msgPos++;
+        // 跳过空格
+        while (msgPos < line.length && [[NSCharacterSet whitespaceCharacterSet] characterIsMember:[line characterAtIndex:msgPos]]) msgPos++;
+        if (msgPos < line.length) {
+            return [line substringFromIndex:msgPos];
+        }
+    }
+    // 没有 pid=（异常行），退回只去时间戳
     NSString *ts = [self timestampFromLogLine:line];
     if (!ts) return line;
-    // 时间戳后通常是 " +0800 "，跳过空格和时区
     NSUInteger pos = ts.length;
     while (pos < line.length && [[NSCharacterSet whitespaceCharacterSet] characterIsMember:[line characterAtIndex:pos]]) pos++;
     if (pos + 5 <= line.length) {
-        // 跳过时区 "+0800"/"-0700"
         unichar c = [line characterAtIndex:pos];
-        if (c == '+' || c == '-') {
-            pos += 6;
-        }
+        if (c == '+' || c == '-') pos += 6;
     }
     while (pos < line.length && [[NSCharacterSet whitespaceCharacterSet] characterIsMember:[line characterAtIndex:pos]]) pos++;
     return [line substringFromIndex:pos];
 }
 
 - (NSArray<NSString *> *)lastLogLines:(NSUInteger)count {
-    NSString *path = @"/var/mobile/Library/Logs/iOSMCP/ios-mcp.log";
-    NSString *content = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
+    // rootless 下真实路径是 /private/var/...，/var 是符号链接可能解析失败，两个都试。
+    NSArray<NSString *> *paths = @[
+        @"/private/var/mobile/Library/Logs/iOSMCP/ios-mcp.log",
+        @"/var/mobile/Library/Logs/iOSMCP/ios-mcp.log",
+    ];
+    NSString *content = @"";
+    for (NSString *path in paths) {
+        content = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
+        if (content.length) break;
+    }
     if (!content.length) return @[];
     NSArray<NSString *> *all = [content componentsSeparatedByString:@"\n"];
     // 从后往前取，最新在最前

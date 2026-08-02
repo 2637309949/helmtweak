@@ -1,0 +1,6 @@
+#!/bin/sh
+# 安装后重置 MCP prefs，保证默认关闭（enabled=false、debugLoggingEnabled=false）。
+# 只删 witchan 域，不动其他。
+rm -f /var/mobile/Library/Preferences/com.witchan.ios-mcp.preferences.plist
+rm -f /private/var/mobile/Library/Preferences/com.witchan.ios-mcp.preferences.plist
+exit 0
