@@ -31,9 +31,47 @@
 @property (nonatomic, assign) CFTimeInterval toggleTimestamp;
 @property (nonatomic, assign) BOOL finalizeScheduled;
 @property (nonatomic, strong) UISwitch *toggleSwitch;
+@property (nonatomic, strong) NSTimer *logTimer;
+@property (nonatomic, strong) PSSpecifier *logViewerSpec;
+@property (nonatomic, assign) BOOL logViewerInstalled;
 @end
 
 @implementation MCPPrefsListController
+
+// 端口 cell 文本右对齐（PSEditTextCell 默认不保证右侧）+ 日志 cell 多行小字。
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    UITableViewCell *cell = [super tableView:tableView cellForRowAtIndexPath:indexPath];
+    PSSpecifier *spec = [self specifierForID:@"logViewerCell"];
+    NSUInteger logIdx = NSNotFound;
+    if (spec) {
+        logIdx = [[self specifiers] indexOfObject:spec];
+    }
+    if ([cell.textLabel.text isEqualToString:@"端口"]) {
+        for (UIView *sub in cell.contentView.subviews) {
+            if ([sub isKindOfClass:[UITextField class]]) {
+                ((UITextField *)sub).textAlignment = NSTextAlignmentRight;
+            }
+        }
+    }
+    if (logIdx != NSNotFound && indexPath.section == 0 && (NSInteger)logIdx == indexPath.row) {
+        cell.textLabel.font = [UIFont systemFontOfSize:11.0];
+        cell.textLabel.numberOfLines = 0;
+        cell.textLabel.lineBreakMode = NSLineBreakByCharWrapping;
+    }
+    return cell;
+}
+
+// 日志 cell 给足够高度容纳 5 行。单 section，row 即 specifiers 索引。
+- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
+    PSSpecifier *spec = [self specifierForID:@"logViewerCell"];
+    if (spec) {
+        NSUInteger idx = [[self specifiers] indexOfObject:spec];
+        if (idx != NSNotFound && indexPath.section == 0 && (NSInteger)idx == indexPath.row) {
+            return 120.0;
+        }
+    }
+    return [super tableView:tableView heightForRowAtIndexPath:indexPath];
+}
 
 // 验证用：NSLog 进 unified log 手机上读不到，写文件。
 - (void)logPrefs:(NSString *)fmt, ... {
@@ -56,13 +94,26 @@
 }
 
 // 用户拨动开关时，Preferences 框架调这里（iOS 15+ action: 不触发，已验证走这条路）。
-// 只在 mcpToggleButton（MCP 服务）上接管，其余开关（启动日志等）直接透传。
+// 服务开关 -> 接管启停；启动日志开关 -> 启停日志刷新 timer；其余直接透传。
 - (void)setPreferenceValue:(id)value specifier:(PSSpecifier *)spec {
     NSString *name = [spec name];
-    BOOL isToggle = [name isEqualToString:@"MCP 服务"];
+    BOOL isToggle = [name isEqualToString:@"服务"];
+    BOOL isLogging = [name isEqualToString:@"启动日志"];
     if (isToggle) {
         [self logPrefs:@"toggle to %@", value];
         [self handleToggleRequest:[value boolValue]];
+    } else if (isLogging) {
+        [self stopLogTimer];
+        if ([value boolValue]) {
+            [self installLogViewer];
+            [self startLogTimerIfNeeded];
+        } else {
+            PSSpecifier *v = [self specifierForID:@"logViewerCell"];
+            if (v) {
+                [v setName:@"（开启启动日志后这里显示最近 5 条）"];
+                [self reload];
+            }
+        }
     }
     [super setPreferenceValue:value specifier:spec];
 }
@@ -78,11 +129,13 @@
     [super viewWillAppear:animated];
     [self registerControlObservers];
     [self refreshServerStatus];
+    [self startLogTimerIfNeeded];
 }
 
 - (void)viewWillDisappear:(BOOL)animated {
     [super viewWillDisappear:animated];
     [self unregisterControlObservers];
+    [self stopLogTimer];
 }
 
 #pragma mark - Darwin event observers
@@ -199,7 +252,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     UITableView *table = [self valueForKey:@"table"];
     if (!table) return;
     for (UITableViewCell *cell in [table visibleCells]) {
-        if (![cell.textLabel.text isEqualToString:@"MCP 服务"]) {
+        if (![cell.textLabel.text isEqualToString:@"服务"]) {
             continue;
         }
         if (loading) {
@@ -218,6 +271,72 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
             }
         }
     }
+}
+
+// 开启启动日志时定时刷新日志 cell。用 NSTimer 轮询文件，避免动态构造 specifier。
+- (void)startLogTimerIfNeeded {
+    BOOL logging = [self debugLoggingEnabled];
+    if (!logging) return;
+    if (self.logTimer) return;
+    [self installLogViewer];
+    self.logTimer = [NSTimer scheduledTimerWithTimeInterval:2.0
+                                                     target:self
+                                                   selector:@selector(refreshLogViewer)
+                                                   userInfo:nil
+                                                    repeats:YES];
+    [self refreshLogViewer];
+}
+
+- (void)stopLogTimer {
+    [self.logTimer invalidate];
+    self.logTimer = nil;
+}
+
+- (BOOL)debugLoggingEnabled {
+    CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("debugLoggingEnabled"),
+                                                     CFSTR("com.witchan.ios-mcp.preferences"));
+    BOOL on = NO;
+    if (v && CFGetTypeID(v) == CFBooleanGetTypeID()) {
+        on = CFBooleanGetValue((CFBooleanRef)v);
+    }
+    if (v) CFRelease(v);
+    return on;
+}
+
+// 日志 cell 存在与否跟随调试开关：开关开 -> 补上日志 cell；关 -> 移除。
+// 用 [self reload] 重建（specifier 列表改动后安全路径）。
+- (void)installLogViewer {
+    if (self.logViewerInstalled) return;
+    self.logViewerInstalled = YES;
+    [self refreshLogViewer];
+}
+
+// 读 ios-mcp.log 最后 5 行，写入 logViewerCell。每次重新取 spec（reload 会重建对象）。
+- (void)refreshLogViewer {
+    PSSpecifier *s = [self specifierForID:@"logViewerCell"];
+    if (!s) return;
+    NSArray *lines = [self lastLogLines:5];
+    NSString *text = lines.count ? [lines componentsJoinedByString:@"\n"] : @"（暂无日志）";
+    if (![text isEqualToString:[s name]]) {
+        [s setName:text];
+        [self reload];
+    }
+}
+
+- (NSArray<NSString *> *)lastLogLines:(NSUInteger)count {
+    NSString *path = @"/var/mobile/Library/Logs/iOSMCP/ios-mcp.log";
+    NSString *content = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
+    if (!content.length) return @[];
+    NSArray<NSString *> *all = [content componentsSeparatedByString:@"\n"];
+    // 去掉尾部空行，从后往前取
+    NSMutableArray<NSString *> *result = [NSMutableArray array];
+    NSInteger i = all.count - 1;
+    while (i >= 0 && result.count < count) {
+        NSString *line = [all[i] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (line.length) [result insertObject:line atIndex:0];
+        i--;
+    }
+    return result;
 }
 
 - (void)refreshServerStatus {
@@ -316,6 +435,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
                                                             preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
+    [self refreshLogViewer];
 }
 
 @end

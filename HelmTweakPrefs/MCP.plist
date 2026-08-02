@@ -22,7 +22,7 @@
 			<key>key</key>
 			<string>enabled</string>
 			<key>label</key>
-			<string>MCP 服务</string>
+			<string>服务</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -65,6 +65,14 @@
 			<string>debugLoggingEnabled</string>
 			<key>label</key>
 			<string>启动日志</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSStaticTextCell</string>
+			<key>id</key>
+			<string>logViewerCell</string>
+			<key>label</key>
+			<string>（开启启动日志后这里显示最近 5 条）</string>
 		</dict>
 		<dict>
 			<key>action</key>
