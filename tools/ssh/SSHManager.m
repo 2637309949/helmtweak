@@ -1,10 +1,12 @@
 #import "SSHManager.h"
 #import <HelmCore/HelmCore.h>
 #import "MCPLogger.h"
+#import <unistd.h>
 
 #define SSH_LOG(fmt, ...) [MCPLogger log:@"[SSH] " fmt, ##__VA_ARGS__]
 
 static NSString *const kSSHDDomainLabel = @"system/com.openssh.sshd";
+static NSString *const kSSHDServiceName = @"com.openssh.sshd";
 
 @implementation SSHManager
 
@@ -195,26 +197,48 @@ static BOOL SSHOutputLooksLikePrivilegeFailure(NSString *output, int exitCode) {
     BOOL clientInstalled = sshClientPath.length > 0 && [fm isExecutableFileAtPath:sshClientPath];
     BOOL scpInstalled = scpPath.length > 0 && [fm isExecutableFileAtPath:scpPath];
 
-    // Running: prefer the launchd state via mcp-root (roothide), else process list.
+    // Running: sshd is socket-activated (Sockets + inetdCompatibility), so there is no
+    // persistent `sshd` process and `pgrep -x sshd` never matches. The service counts as
+    // running when launchd has it registered with a listening socket:
+    //   1. user/<uid>/ domain (Dopamine rootless) — readable without root.
+    //   2. system/ domain (roothide) — via the root channel.
+    //   3. process-list check as a last resort.
     BOOL running = NO;
     NSString *launchdState = @"unknown";
     NSString *rootHelper = MCPRootHelperPath();
     NSString *sudoPath = MCPResolvedJailbreakPath(@"/usr/bin/sudo");
     BOOL rootAvailable = (rootHelper.length && [fm isExecutableFileAtPath:rootHelper])
                       || ([sudoPath length] && [fm isExecutableFileAtPath:sudoPath]);
-    if (rootAvailable) {
-        NSString *launchctlOut = nil;
-        NSString *launchctlError = nil;
-        BOOL launchctlOk = [self runRoot:@"/usr/bin/launchctl"
-                               arguments:@[@"print", kSSHDDomainLabel]
-                                  output:&launchctlOut
-                                   error:&launchctlError];
-        if (launchctlOk && launchctlOut.length) {
-            if ([launchctlOut containsString:@"state = running"]) {
+    NSString *launchctlPath = MCPResolvedJailbreakPath(@"/usr/bin/launchctl");
+    NSString *userLabel = [NSString stringWithFormat:@"user/%d/%@",
+                           (int)getuid(), kSSHDServiceName];
+    NSString *launchctlOut = nil;
+    int launchctlExit = -1;
+    NSString *launchctlError = nil;
+    BOOL launchctlOk = MCPRunProcess(launchctlPath,
+                                     @[@"print", userLabel],
+                                     MCPJailbreakEnvironment(),
+                                     5.0,
+                                     64 * 1024,
+                                     &launchctlOut,
+                                     &launchctlExit,
+                                     &launchctlError);
+    if (launchctlOk && launchctlExit == 0) {
+        running = YES;
+        launchdState = @"running";
+    } else {
+        if (rootAvailable) {
+            NSString *systemOut = nil;
+            NSString *systemError = nil;
+            BOOL systemOk = [self runRoot:@"/usr/bin/launchctl"
+                                 arguments:@[@"print", kSSHDDomainLabel]
+                                    output:&systemOut
+                                     error:&systemError];
+            if (systemOk && systemOut.length) {
                 running = YES;
                 launchdState = @"running";
             } else {
-                launchdState = @"loaded-not-running";
+                launchdState = @"not-loaded";
             }
         } else {
             launchdState = @"not-loaded";

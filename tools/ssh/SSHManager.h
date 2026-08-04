@@ -6,6 +6,11 @@
 /// through the setuid mcp-root helper when available (roothide), falling back to
 /// `sudo -S` on rootless (AppManager pattern). Returns a no-root-channel message
 /// only when neither helper exists.
+///
+/// Running detection is socket-activation aware: on iOS sshd is launched by launchd
+/// via Sockets + inetdCompatibility, so there is no persistent process to pgrep.
+/// We treat the service as running when `launchctl print` finds it registered in the
+/// user/<uid>/ domain (readable without root) or system/ domain (via root channel).
 @interface SSHManager : NSObject
 
 + (instancetype)sharedInstance;
