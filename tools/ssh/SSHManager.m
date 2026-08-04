@@ -234,7 +234,7 @@ static BOOL SSHOutputLooksLikePrivilegeFailure(NSString *output, int exitCode) {
         if (rootAvailable) {
             NSString *systemOut = nil;
             NSString *systemError = nil;
-            BOOL systemOk = [self runRoot:@"/usr/bin/launchctl"
+            BOOL systemOk = [self runRoot:MCPResolvedJailbreakPath(@"/usr/bin/launchctl")
                                  arguments:@[@"print", kSSHDDomainLabel]
                                     output:&systemOut
                                      error:&systemError];
@@ -286,7 +286,7 @@ static BOOL SSHOutputLooksLikePrivilegeFailure(NSString *output, int exitCode) {
 - (NSDictionary *)installSSH:(NSString **)error {
     NSString *output = nil;
     NSString *runError = nil;
-    BOOL ok = [self runRoot:@"/usr/bin/apt-get"
+    BOOL ok = [self runRoot:MCPResolvedJailbreakPath(@"/usr/bin/apt-get")
                  arguments:@[@"install", @"-y", @"openssh-server", @"openssh-client"]
                     output:&output
                      error:&runError];
@@ -306,7 +306,7 @@ static BOOL SSHOutputLooksLikePrivilegeFailure(NSString *output, int exitCode) {
     NSString *output = nil;
     NSString *runError = nil;
     NSString *sshdPlist = MCPResolvedJailbreakPath(@"/Library/LaunchDaemons/com.openssh.sshd.plist");
-    BOOL ok = [self runRoot:@"/usr/bin/launchctl"
+    BOOL ok = [self runRoot:MCPResolvedJailbreakPath(@"/usr/bin/launchctl")
                  arguments:@[@"bootstrap", @"system", sshdPlist]
                     output:&output
                      error:&runError];
@@ -321,7 +321,7 @@ static BOOL SSHOutputLooksLikePrivilegeFailure(NSString *output, int exitCode) {
 - (NSDictionary *)stopSSH:(NSString **)error {
     NSString *output = nil;
     NSString *runError = nil;
-    BOOL ok = [self runRoot:@"/usr/bin/launchctl"
+    BOOL ok = [self runRoot:MCPResolvedJailbreakPath(@"/usr/bin/launchctl")
                  arguments:@[@"bootout", kSSHDDomainLabel]
                     output:&output
                      error:&runError];
@@ -337,7 +337,7 @@ static BOOL SSHOutputLooksLikePrivilegeFailure(NSString *output, int exitCode) {
     NSString *output = nil;
     NSString *runError = nil;
     NSArray<NSString *> *verb = @[enabled ? @"enable" : @"disable", kSSHDDomainLabel];
-    BOOL ok = [self runRoot:@"/usr/bin/launchctl"
+    BOOL ok = [self runRoot:MCPResolvedJailbreakPath(@"/usr/bin/launchctl")
                  arguments:verb
                     output:&output
                      error:&runError];
@@ -350,7 +350,7 @@ static BOOL SSHOutputLooksLikePrivilegeFailure(NSString *output, int exitCode) {
     if (enabled) {
         NSString *kickOutput = nil;
         NSString *kickError = nil;
-        BOOL kicked = [self runRoot:@"/usr/bin/launchctl"
+        BOOL kicked = [self runRoot:MCPResolvedJailbreakPath(@"/usr/bin/launchctl")
                           arguments:@[@"kickstart", @"-k", kSSHDDomainLabel]
                              output:&kickOutput
                               error:&kickError];

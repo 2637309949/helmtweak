@@ -40,11 +40,14 @@ def fetch_latest_artifact(dest_dir):
     print(f"[*] 拉取 CI run {run_id} artifact...")
     subprocess.run([gh, "run", "download", str(run_id), "--repo", "2637309949/helmtweak",
                     "-D", dest_dir], check=True, env=env)
+    best = None
     for root, _, files in os.walk(dest_dir):
         for f in files:
             if f.endswith(".deb"):
-                return os.path.join(root, f)
-    return None
+                # 按文件名倒序：mtime/字母序都可能拿到旧 deb，取词法最大的（版本号在包名后，近似最新）
+                if best is None or f > os.path.basename(best):
+                    best = os.path.join(root, f)
+    return best
 
 
 def main():
