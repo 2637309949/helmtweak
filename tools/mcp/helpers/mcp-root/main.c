@@ -535,7 +535,6 @@ static int is_allowed_apt_package(const char *package_id) {
 
 static int validate_apt_arguments(int argc, char *argv[]) {
     int i;
-    int operation = 0; /* 0 = none, 1 = install, 2 = remove/purge */
 
     if (argc < 4) {
         fprintf(stderr, "apt-get usage is restricted to install/remove/purge of approved packages\n");
@@ -547,10 +546,8 @@ static int validate_apt_arguments(int argc, char *argv[]) {
             fprintf(stderr, "apt-get install requires -y to be non-interactive\n");
             return 0;
         }
-        operation = 1;
         i = 4;
     } else if (strcmp(argv[2], "remove") == 0 || strcmp(argv[2], "purge") == 0) {
-        operation = 2;
         i = 3;
     } else {
         fprintf(stderr, "apt-get verb is not permitted: %s\n", argv[2]);
