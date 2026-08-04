@@ -40,7 +40,7 @@ static NSString *SSHConfiguredSudoPassword(void) {
     } else if (value) {
         CFRelease(value);
     }
-    return @"alpine";
+    return @"";
 }
 
 // True when the mcp-root output indicates the helper ran but failed to escalate
@@ -106,7 +106,8 @@ static BOOL SSHOutputLooksLikePrivilegeFailure(NSString *output, int exitCode) {
         SSH_LOG(@"mcp-root privilege failed (exit=%d), trying sudo fallback", helperExitCode);
     }
 
-    // sudo fallback (AppManager pattern): printf '<pw>' | sudo -k -S -p '' <cmd> <args>
+    // sudo fallback (AppManager pattern): try passwordless `sudo -n` first, then
+    // printf '<pw>' | sudo -k -S -p '' <cmd> <args> with the configured password.
     NSString *sudoPath = MCPResolvedJailbreakPath(@"/usr/bin/sudo");
     NSString *shellPath = MCPResolvedJailbreakPath(@"/bin/sh");
     if (![fm isExecutableFileAtPath:sudoPath]) {
@@ -119,9 +120,38 @@ static BOOL SSHOutputLooksLikePrivilegeFailure(NSString *output, int exitCode) {
         shellPath = @"/bin/sh";
     }
 
+    // 1. passwordless attempt
+    NSMutableArray<NSString *> *nopassParts = [NSMutableArray arrayWithObjects:
+                                               SSHShellQuote(sudoPath),
+                                               @"-n",
+                                               SSHShellQuote(command),
+                                               nil];
+    for (NSString *argument in arguments) {
+        [nopassParts addObject:SSHShellQuote(argument)];
+    }
+    NSString *nopassCommand = [nopassParts componentsJoinedByString:@" "];
+    NSString *nopassOutput = nil;
+    int nopassExitCode = -1;
+    BOOL nopassFinished = MCPRunProcess(shellPath,
+                                        @[@"-lc", nopassCommand],
+                                        MCPJailbreakEnvironment(),
+                                        120.0,
+                                        512 * 1024,
+                                        &nopassOutput,
+                                        &nopassExitCode,
+                                        nil);
+    if (nopassFinished && nopassExitCode == 0) {
+        if (output) *output = nopassOutput;
+        if (errorMessage) *errorMessage = nil;
+        SSH_LOG(@"sudo -n result finished=%d exit=%d args=%@", 1, nopassExitCode, arguments);
+        return YES;
+    }
+
+    // 2. password mode
+    NSString *password = SSHConfiguredSudoPassword();
     NSMutableArray<NSString *> *parts = [NSMutableArray arrayWithObjects:
                                          @"printf '%s\\n'",
-                                         SSHShellQuote(SSHConfiguredSudoPassword()),
+                                         SSHShellQuote(password),
                                          @"|",
                                          SSHShellQuote(sudoPath),
                                          @"-k",
@@ -155,6 +185,10 @@ static BOOL SSHOutputLooksLikePrivilegeFailure(NSString *output, int exitCode) {
                            : [NSString stringWithFormat:@"command exited %d", sudoExitCode];
         } else if (!sudoFinished) {
             *errorMessage = @"sudo invocation failed";
+        }
+        if (password.length == 0 && sudoExitCode != 0) {
+            *errorMessage = [(*errorMessage ?: @"") stringByAppendingString:
+                             @"\n(sudo 需要密码：请在设置 -> SSH 面板填入 root SSH 登录密码)"];
         }
     }
     SSH_LOG(@"sudo result finished=%d exit=%d args=%@", sudoFinished ? 1 : 0, sudoExitCode, arguments);

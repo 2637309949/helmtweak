@@ -34,7 +34,7 @@
 			<key>cell</key>
 			<string>PSEditTextCell</string>
 			<key>default</key>
-			<string>alpine</string>
+			<string></string>
 			<key>defaults</key>
 			<string>com.witchan.ios-mcp.preferences</string>
 			<key>id</key>
@@ -44,7 +44,7 @@
 			<key>label</key>
 			<string>sudo 密码</string>
 			<key>placeholder</key>
-			<string>alpine</string>
+			<string>填 root SSH 登录密码（如 12345）</string>
 			<key>isSecure</key>
 			<true/>
 		</dict>
