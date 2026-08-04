@@ -12,6 +12,22 @@
 static const unsigned long long MCPLoggerMaxBytes = 2ULL * 1024ULL * 1024ULL;
 static const NSUInteger MCPLoggerMaxArchives = 1;
 
+// 默认日志文件名（不带扩展名）。SSH 等子系统用 logMessage:toFileNamed: 落各自的 .log。
+static NSString *const MCPLoggerDefaultFileName = @"mcp";
+static NSString *const MCPLoggerLogDirectoryPath = @"/var/mobile/Library/Logs/helmtweak";
+
+static NSString *MCPLoggerLogFileName(NSString *name) {
+    return [[name.length ? name : MCPLoggerDefaultFileName stringByAppendingString:@".log"] copy];
+}
+
+static NSString *MCPLoggerArchiveFileName(NSString *name) {
+    return [[name.length ? name : MCPLoggerDefaultFileName stringByAppendingString:@".1.log"] copy];
+}
+
+static NSString *MCPLoggerLockFileName(NSString *name) {
+    return [[name.length ? name : MCPLoggerDefaultFileName stringByAppendingString:@".lock"] copy];
+}
+
 static dispatch_queue_t MCPLoggerQueue(void) {
     static dispatch_queue_t queue;
     static dispatch_once_t onceToken;
@@ -146,15 +162,15 @@ static BOOL MCPLoggerWriteAll(int fd, NSData *data) {
 }
 
 + (NSString *)logDirectoryPath {
-    return @"/var/mobile/Library/Logs/iOSMCP";
+    return MCPLoggerLogDirectoryPath;
 }
 
 + (NSString *)logFilePath {
-    return [[self logDirectoryPath] stringByAppendingPathComponent:@"ios-mcp.log"];
+    return [[self logDirectoryPath] stringByAppendingPathComponent:MCPLoggerLogFileName(MCPLoggerDefaultFileName)];
 }
 
 + (NSString *)previousLogFilePath {
-    return [[self logDirectoryPath] stringByAppendingPathComponent:@"ios-mcp.1.log"];
+    return [[self logDirectoryPath] stringByAppendingPathComponent:MCPLoggerArchiveFileName(MCPLoggerDefaultFileName)];
 }
 
 + (NSString *)archivedLogFilePathAtIndex:(NSUInteger)index {
@@ -162,7 +178,7 @@ static BOOL MCPLoggerWriteAll(int fd, NSData *data) {
         return [self logFilePath];
     }
     return [[self logDirectoryPath] stringByAppendingPathComponent:
-            [NSString stringWithFormat:@"ios-mcp.%lu.log", (unsigned long)index]];
+            [NSString stringWithFormat:@"%@.%lu.log", MCPLoggerDefaultFileName, (unsigned long)index]];
 }
 
 + (NSArray<NSString *> *)allLogFilePaths {
@@ -174,7 +190,7 @@ static BOOL MCPLoggerWriteAll(int fd, NSData *data) {
 }
 
 + (NSString *)lockFilePath {
-    return [[self logDirectoryPath] stringByAppendingPathComponent:@"ios-mcp.lock"];
+    return [[self logDirectoryPath] stringByAppendingPathComponent:MCPLoggerLockFileName(MCPLoggerDefaultFileName)];
 }
 
 + (NSString *)lastLogError {
@@ -194,10 +210,14 @@ static BOOL MCPLoggerWriteAll(int fd, NSData *data) {
     va_end(args);
 
     NSLog(@"[witchan][ios-mcp] %@", message);
-    [self logMessage:message];
+    [self logMessage:message toFileNamed:MCPLoggerDefaultFileName];
 }
 
 + (void)logMessage:(NSString *)message {
+    [self logMessage:message toFileNamed:MCPLoggerDefaultFileName];
+}
+
++ (void)logMessage:(NSString *)message toFileNamed:(NSString *)name {
     if (!message.length || ![self isDebugLoggingEnabled]) {
         return;
     }
@@ -217,8 +237,12 @@ static BOOL MCPLoggerWriteAll(int fd, NSData *data) {
             return;
         }
 
-        NSFileManager *fm = [NSFileManager defaultManager];
         NSString *dirPath = [self logDirectoryPath];
+        NSString *logPath = [dirPath stringByAppendingPathComponent:MCPLoggerLogFileName(name)];
+        NSString *archivePath = [dirPath stringByAppendingPathComponent:MCPLoggerArchiveFileName(name)];
+        NSString *lockPath = [dirPath stringByAppendingPathComponent:MCPLoggerLockFileName(name)];
+
+        NSFileManager *fm = [NSFileManager defaultManager];
         NSError *dirError = nil;
         if (![fm createDirectoryAtPath:dirPath
            withIntermediateDirectories:YES
@@ -229,9 +253,6 @@ static BOOL MCPLoggerWriteAll(int fd, NSData *data) {
             return;
         }
 
-        NSString *logPath = [self logFilePath];
-        NSString *previousPath = [self previousLogFilePath];
-        NSString *lockPath = [self lockFilePath];
         int lockFd = open(lockPath.fileSystemRepresentation, O_CREAT | O_RDWR, 0644);
         if (lockFd < 0) {
             MCPLoggerSetLastErrno(@"open_lock", errno);
@@ -260,20 +281,11 @@ static BOOL MCPLoggerWriteAll(int fd, NSData *data) {
         }
 
         if (currentSize > 0 && currentSize + lineData.length > MCPLoggerMaxBytes) {
-            NSString *oldestPath = [self archivedLogFilePathAtIndex:MCPLoggerMaxArchives];
-            if (unlink(oldestPath.fileSystemRepresentation) < 0 && errno != ENOENT) {
+            if (unlink(archivePath.fileSystemRepresentation) < 0 && errno != ENOENT) {
                 MCPLoggerSetLastErrno(@"unlink_previous", errno);
                 operationHadError = YES;
             }
-            for (NSUInteger index = MCPLoggerMaxArchives; index > 1; index--) {
-                NSString *fromPath = [self archivedLogFilePathAtIndex:index - 1];
-                NSString *toPath = [self archivedLogFilePathAtIndex:index];
-                if (rename(fromPath.fileSystemRepresentation, toPath.fileSystemRepresentation) < 0 && errno != ENOENT) {
-                    MCPLoggerSetLastErrno(@"rotate_archive", errno);
-                    operationHadError = YES;
-                }
-            }
-            if (rename(logPath.fileSystemRepresentation, previousPath.fileSystemRepresentation) < 0 && errno != ENOENT) {
+            if (rename(logPath.fileSystemRepresentation, archivePath.fileSystemRepresentation) < 0 && errno != ENOENT) {
                 MCPLoggerSetLastErrno(@"rotate", errno);
                 operationHadError = YES;
             }
@@ -324,6 +336,13 @@ static BOOL MCPLoggerWriteAll(int fd, NSData *data) {
         }
 
         NSArray<NSString *> *paths = [self allLogFilePaths];
+        // 同目录下的命名子日志（ssh.log 等）一起清掉。
+        NSArray<NSString *> *files = [fm contentsOfDirectoryAtPath:dirPath error:nil];
+        for (NSString *file in files) {
+            if ([file hasSuffix:@".log"]) {
+                paths = [paths arrayByAddingObject:[dirPath stringByAppendingPathComponent:file]];
+            }
+        }
         for (NSString *path in paths) {
             if (![fm fileExistsAtPath:path]) {
                 continue;

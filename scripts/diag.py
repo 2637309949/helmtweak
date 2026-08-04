@@ -22,7 +22,7 @@ def main():
     c = connect()
 
     if args.cmd == "log":
-        rc, out, err = run(c, "ls -la /var/mobile/helmtweak_prefs.log /var/mobile/helmtweak.log /var/mobile/Library/Logs/HelmCore/helmcore.log 2>&1; echo '---'; tail -n 50 /var/mobile/helmtweak_prefs.log /var/mobile/helmtweak.log /var/mobile/Library/Logs/HelmCore/helmcore.log 2>&1")
+        rc, out, err = run(c, "ls -la /var/mobile/helmtweak_prefs.log /var/mobile/helmtweak.log /var/mobile/Library/Logs/helmtweak/mcp.log /var/mobile/Library/Logs/helmtweak/ssh.log /var/mobile/Library/Logs/HelmCore/helmcore.log 2>&1; echo '---'; tail -n 50 /var/mobile/helmtweak_prefs.log /var/mobile/helmtweak.log /var/mobile/Library/Logs/helmtweak/mcp.log /var/mobile/Library/Logs/helmtweak/ssh.log /var/mobile/Library/Logs/HelmCore/helmcore.log 2>&1")
         print(out, err)
 
     elif args.cmd == "prefs":
@@ -34,7 +34,7 @@ def main():
         print(out, err)
 
     elif args.cmd == "prep":
-        rc, out, err = run(c, "rm -f /var/mobile/helmtweak_prefs.log /var/mobile/helmtweak.log; rm -f /var/mobile/Library/Logs/HelmCore/helmcore.log; killall -9 Preferences 2>&1; killall -9 cfprefsd 2>&1; sleep 1; echo done")
+        rc, out, err = run(c, "rm -f /var/mobile/helmtweak_prefs.log /var/mobile/helmtweak.log; rm -f /var/mobile/Library/Logs/helmtweak/*.log; rm -f /var/mobile/Library/Logs/HelmCore/helmcore.log; killall -9 Preferences 2>&1; killall -9 cfprefsd 2>&1; sleep 1; echo done")
         print(out, err)
 
     elif args.cmd == "fetch":

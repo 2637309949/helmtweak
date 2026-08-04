@@ -51,6 +51,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--deb", help="本地 deb 路径（缺省用 CI artifact）")
     ap.add_argument("--respring", action="store_true", help="安装后 sbreload")
+    ap.add_argument("--remove-old", help="安装前先 dpkg -r 卸载旧包（包 ID 改名时用），失败忽略")
     args = ap.parse_args()
 
     deb_local = args.deb
@@ -64,6 +65,10 @@ def main():
     deb_remote = "/tmp/helmtweak.deb"
     c = connect()
     print(f"[*] connected {HOST}")
+
+    if args.remove_old:
+        rc, out, err = run(c, f"/var/jb/usr/bin/dpkg -r {args.remove_old} 2>&1; echo 'rc=$?'", timeout=60)
+        print(f"--- dpkg -r {args.remove_old} ---\n{out}\n{err}")
 
     sftp = c.open_sftp()
     sftp.put(deb_local, deb_remote)

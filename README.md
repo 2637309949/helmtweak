@@ -36,7 +36,7 @@ helmtweak/
 ```sh
 # 主项目（CI 前置会 build HelmCore + helpers）
 make clean && make package
-# 输出 packages/com.example.helmtweak_<ver>_iphoneos-arm64.deb
+# 输出 packages/com.helmtweak_<ver>_iphoneos-arm64.deb
 
 # CI 构建顺序（见 .github/workflows/build.yml）：
 #   third_party/libzip -> SDK/HelmCore -> tools/mcp/helpers/* -> 主项目

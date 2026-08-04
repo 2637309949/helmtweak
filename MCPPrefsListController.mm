@@ -405,7 +405,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     });
 }
 
-// 读 ios-mcp.log 最近 15 条，倒序（最新在前）写入 textView。
+// 读 mcp.log 最近 15 条，倒序（最新在前）写入 textView。
 // 仅最新一条保留完整时间戳显示在左上角，其余行去掉时间前缀。
 // 仅在当前看板 + 日志开关开时执行。
 - (void)refreshLogViewer {
@@ -493,8 +493,8 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
 - (NSArray<NSString *> *)lastLogLines:(NSUInteger)count {
     // rootless 下真实路径是 /private/var/...，/var 是符号链接可能解析失败，两个都试。
     NSArray<NSString *> *paths = @[
-        @"/private/var/mobile/Library/Logs/iOSMCP/ios-mcp.log",
-        @"/var/mobile/Library/Logs/iOSMCP/ios-mcp.log",
+        @"/private/var/mobile/Library/Logs/helmtweak/mcp.log",
+        @"/var/mobile/Library/Logs/helmtweak/mcp.log",
     ];
     NSString *content = @"";
     for (NSString *path in paths) {
@@ -583,10 +583,10 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
 
 - (void)clearLogs:(PSSpecifier *)spec {
     // 清日志文件（不依赖 MCPLogger 类，Settings 进程没有它）。
-    // 清 iOSMCP + HelmCore 两个日志目录。
+    // 清 helmtweak + HelmCore 两个日志目录。
     NSFileManager *fm = [NSFileManager defaultManager];
     NSArray<NSString *> *dirs = @[
-        @"/var/mobile/Library/Logs/iOSMCP",
+        @"/var/mobile/Library/Logs/helmtweak",
         @"/var/mobile/Library/Logs/HelmCore",
     ];
 

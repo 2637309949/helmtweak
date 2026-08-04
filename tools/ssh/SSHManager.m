@@ -3,7 +3,11 @@
 #import "MCPLogger.h"
 #import <unistd.h>
 
-#define SSH_LOG(fmt, ...) [MCPLogger log:@"[SSH] " fmt, ##__VA_ARGS__]
+// SSH 子系统日志单独落 helmtweak/ssh.log（走 MCPLogger 的命名文件 API，同 debugLoggingEnabled 门控）。
+#define SSH_LOG(fmt, ...) do { \
+    NSString *msg = [[NSString alloc] initWithFormat:@"[SSH] " fmt, ##__VA_ARGS__]; \
+    [MCPLogger logMessage:msg toFileNamed:@"ssh"]; \
+} while (0)
 
 static NSString *const kSSHDDomainLabel = @"system/com.openssh.sshd";
 static NSString *const kSSHDServiceName = @"com.openssh.sshd";

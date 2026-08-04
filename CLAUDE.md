@@ -27,7 +27,7 @@ Project memory for fast pickup. Read this before touching the build.
 
 - Build system: **Theos** (`make`). Requires the iPhoneOS SDK (CI installs 16.5 via theos-action).
 - Local macOS build (optional): `brew install ldid dpkg`, have Theos on `$THEOS`, then `make clean && make package`.
-- Output: `packages/com.example.helmtweak_<version>_iphoneos-arm64.deb`.
+- Output: `packages/com.helmtweak_<version>_iphoneos-arm64.deb`.
 - **CI is the only distribution path.** No phone-side build scripts, no WSL/Linux cross-compile scripts. Don't add them.
 
 ## Deploy to phone (装机)
@@ -46,7 +46,7 @@ Project memory for fast pickup. Read this before touching the build.
 - [Makefile](Makefile) — `TARGET := iphone:clang:16.5:15.0`, `ARCHS = arm64 arm64e`, `THEOS_PACKAGE_SCHEME = rootless` (default; can override to `roothide` for local build on roothide device), `INSTALL_TARGET_PROCESSES = SpringBoard`, `TWEAK_NAME = HelmMCP`, `HelmMCP_ENTITLEMENTS = tools/mcp/entitlements.plist`. HelmMCP scheme 自适应段（`ifeq ($(THEOS_PACKAGE_SCHEME),roothide) ... HelmMCP_LIBRARIES = roothide + -DMCP_ROOTHIDE=1`）。`after-stage::` 段把 build 好的 helpers bundle 进 deb staging（rootless 只 bundle mcp-logreader，roothide 还加 mcp-root + chmod 4755）。
 - [tools/mcp/Tweak.x](tools/mcp/Tweak.x) — HelmMCP 入口：`%hook SpringBoard` autostart MCP server + 监听 darwin notification（Settings 开关）。ARC on.
 - [HelmMCP.plist](HelmMCP.plist) — **filter plist**, `Filter.Bundles = [com.apple.springboard]`. Name MUST equal `TWEAK_NAME`.
-- [control](control) — `Package: com.example.helmtweak`, `Architecture: iphoneos-arm64` (rootless fixed field), `Depends: mobilesubstrate`. **Filename is lowercase `control`** (see gotchas).
+- [control](control) — `Package: com.helmtweak`, `Architecture: iphoneos-arm64` (rootless fixed field), `Depends: mobilesubstrate`. **Filename is lowercase `control`** (see gotchas).
 - [.github/workflows/build.yml](.github/workflows/build.yml) — macos-latest, `Randomblock1/theos-action@v1` for env+SDK, helper pre-build step (`make` in each `tools/mcp/helpers/<name>/`), then `make clean && make package` at root, then `upload-artifact` of `packages/*.deb`. **Only builds rootless** (theos-action doesn't ship libroothide).
 - [tools/mcp/](tools/mcp/) — **应用层**。HelmMCP dylib source（forked from `witchan/ios-mcp`, GPL-3.0）: Tweak.x / MCPServer / 各 Manager / `IOSMCPPreferences.h` (默认端口 8686)。**用户可用的"工具"就是这里的 MCP**。
 - [tools/mcp/helpers/](tools/mcp/helpers/) — **MCP 内部 CLI 工具**（不暴露给用户，被 MCP server 调用）：每个自己 Makefile，scheme 自适应。`mcp-logreader/` (连 diagnosticd 拿 unified log，rootless + roothide 都 build)、`mcp-root/` (setuid root 命令白名单，只 roothide build + chmod 4755)、`mcp-roothelper/`、`mcp-ldid/`、`mcp-appsync/`。`README.md` 列出 Phase 2c 后续要 fork 的 helper + 各自卡点。
@@ -55,7 +55,7 @@ Project memory for fast pickup. Read this before touching the build.
 - [scripts/](scripts/) — **开发工具链**（部署/验证/诊断/MCP 客户端），不参与打包。
 - [HelmTweakPrefs.mm](HelmTweakPrefs.mm) — PreferenceBundle binary; `PSListController` subclass, override `specifiers` with `[self loadSpecifiersFromPlistName:@"Root" target:self]` (see gotchas — two-arg form is load-bearing).
 - [MCPPrefsListController.mm](MCPPrefsListController.mm) — MCP 子面板 controller。PSButtonCell + `[spec setName:]` + `[self reload]` 刷新 button title（见 gotchas）。
-- [HelmTweakPrefs/Info.plist](HelmTweakPrefs/Info.plist) — bundle metadata, `CFBundleIdentifier = com.example.helmtweakprefs`, `NSPrincipalClass = HelmTweakPrefsListController`. The whole `HelmTweakPrefs/` folder is the bundle resource dir (mapped via `HelmTweakPrefs_RESOURCE_DIRS` in Makefile).
+- [HelmTweakPrefs/Info.plist](HelmTweakPrefs/Info.plist) — bundle metadata, `CFBundleIdentifier = com.helmtweak.prefs`, `NSPrincipalClass = HelmTweakPrefsListController`. The whole `HelmTweakPrefs/` folder is the bundle resource dir (mapped via `HelmTweakPrefs_RESOURCE_DIRS` in Makefile).
 - [HelmTweakPrefs/Root.plist](HelmTweakPrefs/Root.plist) — root panel spec, one `PSGroupCell` + one `PSLinkCell` (`detail = MCPPrefsListController`) routing to MCP subpanel.
 - [HelmTweakPrefs/MCP.plist](HelmTweakPrefs/MCP.plist) — MCP subpanel spec: `PSButtonCell` (`action = toggleServer:`, `id = mcpToggleButton`) + port edit + debug switch.
 - [layout/Library/PreferenceLoader/Preferences/HelmTweakPrefs.plist](layout/Library/PreferenceLoader/Preferences/HelmTweakPrefs.plist) — Settings root entry; wrapped in `entry` dict with `detail = HelmTweakPrefsListController`.

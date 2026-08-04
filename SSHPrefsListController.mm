@@ -27,6 +27,11 @@
 @property (nonatomic, strong) PSSpecifier *statusSpec;
 @property (nonatomic, strong) PSSpecifier *toggleSpec;
 @property (nonatomic, assign) BOOL busy;
+@property (nonatomic, strong) UILabel *logTextLabel;
+@property (nonatomic, strong) UIButton *logRefreshButton;
+@property (nonatomic, strong) UILabel *logTimeLabel;
+@property (nonatomic, strong) UIView *logFooterView;
+@property (nonatomic, assign) BOOL logViewerInstalled;
 @end
 
 @implementation SSHPrefsListController
@@ -67,11 +72,17 @@
     [super viewWillAppear:animated];
     [self registerObservers];
     [self requestStatusRefresh];
+    [self updateLogFooter];
 }
 
 - (void)viewWillDisappear:(BOOL)animated {
     [super viewWillDisappear:animated];
     [self unregisterObservers];
+}
+
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    [self layoutSSHLogFooter];
 }
 
 #pragma mark - Darwin observers
@@ -101,6 +112,7 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
     if (!controller) return;
     dispatch_async(dispatch_get_main_queue(), ^{
         [controller refreshFromStatusPref];
+        [controller refreshLogViewer];
     });
 }
 
@@ -226,6 +238,218 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
 - (void)statusSpecPending:(NSString *)text {
     [self.statusSpec setName:text];
     [self reload];
+}
+
+#pragma mark - SSH 日志视图（读 helmtweak/ssh.log，参考 MCP 面板的悬浮 footer）
+
+- (void)updateLogFooter {
+    UITableView *table = [self valueForKey:@"table"];
+    if (!table) return;
+    if (!self.logFooterView) {
+        [self buildSSHLogFooterWithTable:table];
+    }
+    table.tableFooterView = self.logFooterView;
+    [self layoutSSHLogFooter];
+    [self refreshLogViewer];
+}
+
+- (void)buildSSHLogFooterWithTable:(UITableView *)table {
+    UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, table.bounds.size.width, 253)];
+    footer.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+
+    UILabel *time = [[UILabel alloc] initWithFrame:CGRectZero];
+    time.font = [UIFont systemFontOfSize:13.0];
+    time.textColor = [UIColor secondaryLabelColor];
+    time.text = @"暂无日志，点右上角刷新";
+    [footer addSubview:time];
+    self.logTimeLabel = time;
+
+    UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
+    btn.frame = CGRectZero;
+    [btn setTitle:@"刷新" forState:UIControlStateNormal];
+    [btn.titleLabel setFont:[UIFont systemFontOfSize:13.0]];
+    btn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentRight;
+    btn.contentVerticalAlignment = UIControlContentVerticalAlignmentBottom;
+    [btn addTarget:self action:@selector(refreshLogsTapped:) forControlEvents:UIControlEventTouchUpInside];
+    [footer addSubview:btn];
+    self.logRefreshButton = btn;
+
+    UILabel *log = [[UILabel alloc] initWithFrame:CGRectZero];
+    log.numberOfLines = 15;
+    log.lineBreakMode = NSLineBreakByTruncatingTail;
+    log.backgroundColor = [UIColor clearColor];
+    log.textColor = [UIColor secondaryLabelColor];
+    log.font = [UIFont systemFontOfSize:11.0];
+    log.text = @"";
+    [footer addSubview:log];
+    self.logTextLabel = log;
+
+    self.logFooterView = footer;
+}
+
+- (void)layoutSSHLogFooter {
+    UITableView *table = [self valueForKey:@"table"];
+    if (!table || !self.logFooterView) return;
+
+    CGFloat width = table.bounds.size.width;
+    CGFloat inset = 16.0;
+    CGFloat footerTop = 8.0;
+    CGFloat headerH = 20.0;
+    CGFloat logH = 225.0;
+    CGFloat btnW = 56.0;
+
+    CGRect f = self.logFooterView.frame;
+    f.size.width = width;
+    f.size.height = footerTop + headerH + logH;
+    self.logFooterView.frame = f;
+
+    CGFloat textX = inset + 16;
+    CGFloat switchRight = width - inset;
+    for (UITableViewCell *cell in [table visibleCells]) {
+        if ([cell.accessoryView isKindOfClass:[UISwitch class]]) {
+            CGRect accessoryFrame = [table convertRect:cell.accessoryView.frame
+                                              fromView:cell.accessoryView.superview];
+            switchRight = CGRectGetMaxX(accessoryFrame);
+            break;
+        }
+    }
+    CGFloat btnX = switchRight - btnW;
+
+    CGFloat lineH = self.logTimeLabel.font.lineHeight;
+    self.logTimeLabel.frame = CGRectMake(textX, footerTop + headerH - lineH, btnX - textX - 8, lineH);
+    self.logRefreshButton.frame = CGRectMake(btnX, footerTop, btnW, headerH);
+    self.logTextLabel.frame = CGRectMake(textX, footerTop + headerH, width - textX - inset, logH);
+
+    table.tableFooterView = self.logFooterView;
+}
+
+- (void)refreshLogsTapped:(UIButton *)sender {
+    [self performLogRefreshWithButton:sender];
+}
+
+- (void)performLogRefreshWithButton:(UIButton *)button {
+    if (self.logViewerInstalled) return;
+    self.logViewerInstalled = YES;
+
+    UIActivityIndicatorView *spinner = nil;
+    if (button) {
+        spinner = [[UIActivityIndicatorView alloc]
+            initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+        NSString *title = [button titleForState:UIControlStateNormal];
+        CGSize ts = [title sizeWithAttributes:@{NSFontAttributeName: button.titleLabel.font}];
+        CGRect titleFrame = CGRectMake(button.bounds.size.width - ts.width,
+                                       button.bounds.size.height - ts.height,
+                                       ts.width, ts.height);
+        spinner.frame = CGRectMake(CGRectGetMidX(titleFrame) - 10, CGRectGetMidY(titleFrame) - 10, 20, 20);
+        [button addSubview:spinner];
+        [button setTitle:@"" forState:UIControlStateNormal];
+        [spinner startAnimating];
+    }
+
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        __strong typeof(weakSelf) self = weakSelf;
+        if (!self) return;
+        [self refreshLogViewer];
+        self.logViewerInstalled = NO;
+        [spinner removeFromSuperview];
+        if (button) [button setTitle:@"刷新" forState:UIControlStateNormal];
+    });
+}
+
+// 读 ssh.log 最近 15 条，倒序（最新在前）写入 textView。
+- (void)refreshLogViewer {
+    if (!(self.isViewLoaded && self.view.window != nil)) return;
+    NSArray<NSString *> *lines = [self lastSSHLogLines:15];
+    if (!lines.count) {
+        self.logTextLabel.text = @"";
+        self.logTimeLabel.text = @"暂无日志，点右上角刷新";
+        return;
+    }
+
+    NSString *newestTime = [self timestampFromSSHLogLine:lines.firstObject];
+    self.logTimeLabel.text = newestTime ?: @"";
+
+    NSMutableArray<NSString *> *display = [NSMutableArray array];
+    CGFloat maxWidth = self.logTextLabel.bounds.size.width;
+    for (NSString *line in lines) {
+        NSString *clean = [self logLineWithoutTimestamp:line];
+        if (clean.length) [display addObject:[self truncateSSHLine:clean toWidth:maxWidth]];
+    }
+    if (display.count) {
+        self.logTextLabel.text = [display componentsJoinedByString:@"\n"];
+    } else {
+        self.logTextLabel.text = @"";
+        self.logTimeLabel.text = @"暂无日志，点右上角刷新";
+    }
+}
+
+- (NSString *)truncateSSHLine:(NSString *)string toWidth:(CGFloat)maxWidth {
+    if (maxWidth <= 0) return string;
+    UIFont *font = self.logTextLabel.font;
+    if ([string sizeWithAttributes:@{NSFontAttributeName: font}].width <= maxWidth) return string;
+    NSMutableString *ms = [string mutableCopy];
+    while (ms.length > 1) {
+        [ms deleteCharactersInRange:NSMakeRange(ms.length - 1, 1)];
+        NSString *cand = [ms stringByAppendingString:@"…"];
+        if ([cand sizeWithAttributes:@{NSFontAttributeName: font}].width <= maxWidth) return cand;
+    }
+    return @"…";
+}
+
+- (NSString *)timestampFromSSHLogLine:(NSString *)line {
+    if (line.length < 19) return nil;
+    NSString *head = [line substringToIndex:19];
+    if ([head characterAtIndex:4] == '-' && [head characterAtIndex:7] == '-') {
+        return head;
+    }
+    return nil;
+}
+
+// 去掉行首时间戳和 pid= 前缀，只留 message。
+- (NSString *)logLineWithoutTimestamp:(NSString *)line {
+    NSRange pidRange = [line rangeOfString:@"pid="];
+    if (pidRange.location != NSNotFound) {
+        NSUInteger msgPos = pidRange.location + pidRange.length;
+        while (msgPos < line.length && [[NSCharacterSet decimalDigitCharacterSet] characterIsMember:[line characterAtIndex:msgPos]]) msgPos++;
+        while (msgPos < line.length && [[NSCharacterSet whitespaceCharacterSet] characterIsMember:[line characterAtIndex:msgPos]]) msgPos++;
+        if (msgPos < line.length) {
+            return [line substringFromIndex:msgPos];
+        }
+    }
+    NSString *ts = [self timestampFromSSHLogLine:line];
+    if (!ts) return line;
+    NSUInteger pos = ts.length;
+    while (pos < line.length && [[NSCharacterSet whitespaceCharacterSet] characterIsMember:[line characterAtIndex:pos]]) pos++;
+    if (pos + 5 <= line.length) {
+        unichar c = [line characterAtIndex:pos];
+        if (c == '+' || c == '-') pos += 6;
+    }
+    while (pos < line.length && [[NSCharacterSet whitespaceCharacterSet] characterIsMember:[line characterAtIndex:pos]]) pos++;
+    return [line substringFromIndex:pos];
+}
+
+- (NSArray<NSString *> *)lastSSHLogLines:(NSUInteger)count {
+    NSArray<NSString *> *paths = @[
+        @"/private/var/mobile/Library/Logs/helmtweak/ssh.log",
+        @"/var/mobile/Library/Logs/helmtweak/ssh.log",
+    ];
+    NSString *content = @"";
+    for (NSString *path in paths) {
+        content = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
+        if (content.length) break;
+    }
+    if (!content.length) return @[];
+    NSArray<NSString *> *all = [content componentsSeparatedByString:@"\n"];
+    NSMutableArray<NSString *> *result = [NSMutableArray array];
+    NSInteger i = all.count - 1;
+    while (i >= 0 && result.count < count) {
+        NSString *line = [all[i] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (line.length) [result addObject:line];
+        i--;
+    }
+    return result;
 }
 
 @end
