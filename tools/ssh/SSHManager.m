@@ -19,54 +19,140 @@ static NSString *const kSSHDDomainLabel = @"system/com.openssh.sshd";
 
 #pragma mark - Primitives
 
-// Run a root command via the setuid mcp-root helper (roothide only).
-// Returns NO with *errorMessage when no privileged helper is available.
+static NSString *SSHShellQuote(NSString *string) {
+    NSString *value = string ?: @"";
+    return [NSString stringWithFormat:@"'%@'", [value stringByReplacingOccurrencesOfString:@"'" withString:@"'\\''"]];
+}
+
+static NSString *SSHConfiguredSudoPassword(void) {
+    CFPropertyListRef value = CFPreferencesCopyAppValue(CFSTR("sudo_password"),
+                                                        CFSTR("com.witchan.ios-mcp.preferences"));
+    if (value && CFGetTypeID(value) == CFStringGetTypeID()) {
+        NSString *password = [(__bridge NSString *)value copy];
+        CFRelease(value);
+        if (password.length > 0) return password;
+    } else if (value) {
+        CFRelease(value);
+    }
+    return @"alpine";
+}
+
+// True when the mcp-root output indicates the helper ran but failed to escalate
+// (sandbox blocks setuid on rootless) and a sudo fallback may still succeed.
+static BOOL SSHOutputLooksLikePrivilegeFailure(NSString *output, int exitCode) {
+    if (exitCode == 111) return YES;
+    if (![output isKindOfClass:[NSString class]] || output.length == 0) return NO;
+    return [output rangeOfString:@"setgid(0) failed"].location != NSNotFound ||
+           [output rangeOfString:@"setuid(0) failed"].location != NSNotFound;
+}
+
+// Run a root command, matching AppManager's dual-channel pattern:
+//   1. setuid mcp-root helper (roothide); if it runs but cannot escalate, or
+//      is absent, fall through to:
+//   2. `printf '<pw>' | sudo -k -S -p '' <command> <arguments>` (rootless/roothide).
+// Returns NO with *errorMessage when no root channel is available at all.
 - (BOOL)runRoot:(NSString *)command
       arguments:(NSArray<NSString *> *)arguments
          output:(NSString **)output
          error:(NSString **)errorMessage {
+    if (output) *output = @"";
+    if (errorMessage) *errorMessage = nil;
+
+    NSFileManager *fm = [NSFileManager defaultManager];
     NSString *rootHelper = MCPRootHelperPath();
-    if (!rootHelper.length) {
-        if (errorMessage) *errorMessage = @"No privileged helper available (requires roothide jailbreak). On rootless, install/start/stop SSH manually via Sileo.";
-        return NO;
-    }
+    NSString *helperOutput = nil;
+    NSString *helperError = nil;
+    int helperExitCode = -1;
 
-    NSData *outputData = nil;
-    BOOL truncated = NO;
-    int exitCode = -1;
-    NSString *runError = nil;
-
-    BOOL finished = MCPRunRootProcessData(command,
-                                          arguments,
-                                          120.0,
-                                          512 * 1024,
-                                          &outputData,
-                                          &truncated,
-                                          &exitCode,
-                                          &runError);
-    if (!finished) {
-        if (errorMessage) *errorMessage = runError.length ? runError : @"mcp-root invocation failed";
-        SSH_LOG(@"root command failed spawn=%@ args=%@ err=%@",
-                command, arguments, runError ?: @"-");
-        return NO;
-    }
-
-    if (output) {
-        *output = outputData.length
-            ? [[NSString alloc] initWithData:outputData encoding:NSUTF8StringEncoding]
-            : @"";
-    }
-    if (exitCode != 0) {
-        NSString *outText = outputData.length
-            ? [[NSString alloc] initWithData:outputData encoding:NSUTF8StringEncoding]
-            : @"";
-        if (errorMessage) {
-            *errorMessage = outText.length ? outText : [NSString stringWithFormat:@"command exited %d", exitCode];
+    if (rootHelper.length && [fm isExecutableFileAtPath:rootHelper]) {
+        NSData *outputData = nil;
+        BOOL truncated = NO;
+        int exitCode = -1;
+        NSString *runError = nil;
+        BOOL finished = MCPRunRootProcessData(command,
+                                              arguments,
+                                              120.0,
+                                              512 * 1024,
+                                              &outputData,
+                                              &truncated,
+                                              &exitCode,
+                                              &runError);
+        if (finished && exitCode == 0) {
+            NSString *outText = outputData.length
+                ? [[NSString alloc] initWithData:outputData encoding:NSUTF8StringEncoding]
+                : @"";
+            if (output) *output = outText;
+            if (errorMessage) *errorMessage = nil;
+            return YES;
         }
-        SSH_LOG(@"root command exit=%d args=%@", exitCode, arguments);
+        helperExitCode = exitCode;
+        helperOutput = outputData.length
+            ? [[NSString alloc] initWithData:outputData encoding:NSUTF8StringEncoding]
+            : @"";
+        helperError = runError ?: @"";
+        if (!SSHOutputLooksLikePrivilegeFailure(helperOutput, helperExitCode)) {
+            if (output) *output = helperOutput;
+            if (errorMessage) *errorMessage = helperError.length ? helperError : @"mcp-root invocation failed";
+            SSH_LOG(@"root command failed spawn=%@ args=%@ err=%@",
+                    command, arguments, helperError ?: @"-");
+            return NO;
+        }
+        SSH_LOG(@"mcp-root privilege failed (exit=%d), trying sudo fallback", helperExitCode);
+    }
+
+    // sudo fallback (AppManager pattern): printf '<pw>' | sudo -k -S -p '' <cmd> <args>
+    NSString *sudoPath = MCPResolvedJailbreakPath(@"/usr/bin/sudo");
+    NSString *shellPath = MCPResolvedJailbreakPath(@"/bin/sh");
+    if (![fm isExecutableFileAtPath:sudoPath]) {
+        if (errorMessage) {
+            *errorMessage = @"No privileged helper available (requires roothide jailbreak). On rootless, install/start/stop SSH manually via Sileo.";
+        }
         return NO;
     }
-    return YES;
+    if (![fm isExecutableFileAtPath:shellPath]) {
+        shellPath = @"/bin/sh";
+    }
+
+    NSMutableArray<NSString *> *parts = [NSMutableArray arrayWithObjects:
+                                         @"printf '%s\\n'",
+                                         SSHShellQuote(SSHConfiguredSudoPassword()),
+                                         @"|",
+                                         SSHShellQuote(sudoPath),
+                                         @"-k",
+                                         @"-S",
+                                         @"-p",
+                                         @"''",
+                                         SSHShellQuote(command),
+                                         nil];
+    for (NSString *argument in arguments) {
+        [parts addObject:SSHShellQuote(argument)];
+    }
+    NSString *shellCommand = [parts componentsJoinedByString:@" "];
+
+    NSString *sudoOutput = nil;
+    NSString *sudoError = nil;
+    int sudoExitCode = -1;
+    BOOL sudoFinished = MCPRunProcess(shellPath,
+                                      @[@"-lc", shellCommand],
+                                      MCPJailbreakEnvironment(),
+                                      120.0,
+                                      512 * 1024,
+                                      &sudoOutput,
+                                      &sudoExitCode,
+                                      &sudoError);
+    if (output) *output = sudoOutput;
+    if (errorMessage) {
+        if (sudoError.length > 0) {
+            *errorMessage = sudoError;
+        } else if (sudoExitCode != 0) {
+            *errorMessage = sudoOutput.length ? sudoOutput
+                           : [NSString stringWithFormat:@"command exited %d", sudoExitCode];
+        } else if (!sudoFinished) {
+            *errorMessage = @"sudo invocation failed";
+        }
+    }
+    SSH_LOG(@"sudo result finished=%d exit=%d args=%@", sudoFinished ? 1 : 0, sudoExitCode, arguments);
+    return sudoFinished && sudoExitCode == 0;
 }
 
 // Non-root process check: true when any sshd process is alive.
@@ -113,28 +199,24 @@ static NSString *const kSSHDDomainLabel = @"system/com.openssh.sshd";
     BOOL running = NO;
     NSString *launchdState = @"unknown";
     NSString *rootHelper = MCPRootHelperPath();
-    if (rootHelper.length) {
-        NSData *outputData = nil;
-        BOOL truncated = NO;
-        int exitCode = -1;
-        NSString *runError = nil;
-        BOOL finished = MCPRunRootProcessData(@"/usr/bin/launchctl",
-                                              @[@"print", kSSHDDomainLabel],
-                                              10.0,
-                                              128 * 1024,
-                                              &outputData,
-                                              &truncated,
-                                              &exitCode,
-                                              &runError);
-        if (finished && exitCode == 0 && outputData.length) {
-            NSString *text = [[NSString alloc] initWithData:outputData encoding:NSUTF8StringEncoding];
-            if ([text containsString:@"state = running"]) {
+    NSString *sudoPath = MCPResolvedJailbreakPath(@"/usr/bin/sudo");
+    BOOL rootAvailable = (rootHelper.length && [fm isExecutableFileAtPath:rootHelper])
+                      || ([sudoPath length] && [fm isExecutableFileAtPath:sudoPath]);
+    if (rootAvailable) {
+        NSString *launchctlOut = nil;
+        NSString *launchctlError = nil;
+        BOOL launchctlOk = [self runRoot:@"/usr/bin/launchctl"
+                               arguments:@[@"print", kSSHDDomainLabel]
+                                  output:&launchctlOut
+                                   error:&launchctlError];
+        if (launchctlOk && launchctlOut.length) {
+            if ([launchctlOut containsString:@"state = running"]) {
                 running = YES;
                 launchdState = @"running";
             } else {
                 launchdState = @"loaded-not-running";
             }
-        } else if (finished) {
+        } else {
             launchdState = @"not-loaded";
         }
     }
@@ -154,7 +236,7 @@ static NSString *const kSSHDDomainLabel = @"system/com.openssh.sshd";
         @"running": @(running),
         @"launchd_state": launchdState,
         @"autostart": @(autostart),
-        @"root_available": @(rootHelper.length > 0),
+        @"root_available": @(rootAvailable),
         @"port": @22,
         @"ssh_cmd": sshClientPath,
         @"sshd_cmd": sshdPath,
@@ -167,7 +249,7 @@ static NSString *const kSSHDDomainLabel = @"system/com.openssh.sshd";
             running ? 1 : 0,
             launchdState,
             autostart ? 1 : 0,
-            (int)(rootHelper.length > 0));
+            rootAvailable ? 1 : 0);
     return status;
 }
 
