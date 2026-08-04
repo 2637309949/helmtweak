@@ -13,8 +13,8 @@ TWEAK_NAME = HelmMCP
 HelmMCP_FILES = tools/mcp/Tweak.x tools/mcp/MCPServer.m tools/mcp/MCPLogger.m \
                 tools/mcp/ClipboardManager.m \
                 tools/mcp/FileSystemManager.m tools/mcp/LogManager.m \
-                tools/mcp/SSHManager.m
-HelmMCP_CFLAGS = -fobjc-arc -Wno-unused-function -Wno-deprecated-declarations -I$(THEOS_PROJECT_DIR)/SDK
+                tools/ssh/SSHManager.m
+HelmMCP_CFLAGS = -fobjc-arc -Wno-unused-function -Wno-deprecated-declarations -I$(THEOS_PROJECT_DIR)/SDK -I$(THEOS_PROJECT_DIR)/tools/mcp -I$(THEOS_PROJECT_DIR)/tools/ssh
 HelmMCP_FRAMEWORKS = IOKit UIKit CoreGraphics QuartzCore MobileCoreServices AVFoundation Security Vision
 HelmMCP_ENTITLEMENTS = tools/mcp/entitlements.plist
 # 链接 HelmCore SDK dylib（CI 前置步骤先 build；after-stage 把它拷进 deb 的 /usr/lib）
@@ -34,7 +34,7 @@ include $(THEOS_MAKE_PATH)/tweak.mk
 # ===== PreferenceBundle: Settings.app 入口，显示 hello =====
 BUNDLE_NAME = HelmTweakPrefs
 HelmTweakPrefs_FILES = HelmTweakPrefs.mm MCPPrefsListController.mm SSHPrefsListController.mm
-HelmTweakPrefs_CFLAGS = -fobjc-arc -Wno-unused-variable -I$(THEOS_PROJECT_DIR)/SDK -I$(THEOS_PROJECT_DIR)/tools/mcp
+HelmTweakPrefs_CFLAGS = -fobjc-arc -Wno-unused-variable -I$(THEOS_PROJECT_DIR)/SDK -I$(THEOS_PROJECT_DIR)/tools/mcp -I$(THEOS_PROJECT_DIR)/tools/ssh
 HelmTweakPrefs_FRAMEWORKS = UIKit Preferences
 HelmTweakPrefs_PRIVATE_FRAMEWORKS = Preferences
 HelmTweakPrefs_INSTALL_PATH = /Library/PreferenceBundles

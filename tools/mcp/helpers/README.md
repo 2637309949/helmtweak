@@ -17,14 +17,14 @@ HelmMCP 内部 CLI 基础设施（**不暴露给用户**，被 MCP server 调用
 
 ## mcp-root 白名单（SSH 相关）
 
-SSH 工具（`tools/mcp/SSHManager.m`）经 mcp-root 执行 root 操作，白名单规则：
+SSH 工具（`tools/ssh/SSHManager.m`，独立于 MCP，经 Settings -> SSH 面板 + darwin 事件驱动）经 mcp-root 执行 root 操作，白名单规则：
 
-- **apt-get**：只允许 `install -y <pkg>` / `remove|purge <pkg>`，包名白名单 `{dropbear, openssh-client, openssh-server}`，拒绝其他任何选项/包。对应 `ssh_install`。
+- **apt-get**：只允许 `install -y <pkg>` / `remove|purge <pkg>`，包名白名单 `{dropbear, openssh-client, openssh-server}`，拒绝其他任何选项/包。对应 `SSHManager installSSH:`。
 - **launchctl**：只允许
-  - `print system/<target>`（`ssh_get_status` 查询 daemon 状态）
-  - `bootstrap system <sshd-plist>`（`ssh_start`，plist 必须是 `/Library/LaunchDaemons/com.openssh.sshd.plist`）
-  - `bootout system/<target>`（`ssh_stop`）
-  - `enable|disable system/<target>` + `kickstart -k <target>`（`ssh_set_autostart`）
+  - `print system/<target>`（`getStatus:` 查询 daemon 状态）
+  - `bootstrap system <sshd-plist>`（`startSSH:`，plist 必须是 `/Library/LaunchDaemons/com.openssh.sshd.plist`）
+  - `bootout system/<target>`（`stopSSH:`）
+  - `enable|disable system/<target>` + `kickstart -k <target>`（`setAutostart:error:`）
   - `<target>` 白名单：`system/com.apple.accessibility.AccessibilityUIServer`、`system/com.apple.VoiceOverTouch`、`system/com.openssh.sshd`。
 - **dpkg**：已有 install/status/remove/purge 白名单（AppManager 用）。
 

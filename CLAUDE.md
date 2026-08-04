@@ -18,10 +18,10 @@ Project memory for fast pickup. Read this before touching the build.
 ## Directory layering (新文件别放错层)
 
 - `SDK/HelmCore/` = **SDK 层**（跨应用复用 dylib + 私有 header 集中声明）。
-- `tools/` = **应用层**。目前只有 `tools/mcp/`（用户可用的 MCP 工具）和其内部 `tools/mcp/helpers/`（MCP 的后端 CLI，不暴露给用户）。
+- `tools/` = **应用层**。目前有 `tools/mcp/`（用户可用的 MCP 工具）和其内部 `tools/mcp/helpers/`（MCP 的后端 CLI，不暴露给用户），以及 `tools/ssh/`（独立系统工具：OpenSSH 生命周期管理，经 Settings -> SSH 面板 + darwin 事件驱动，不注册为 MCP 工具）。
 - `scripts/` = **开发工具链**（部署/验证/诊断，不进 deb）。不参与打包。
 - `third_party/` = **vendored 构建依赖**（第三方源码/静态库，如 ldid/libzip/procursus-sdk，只被 helpers 链接，参与编译不进 deb 安装）。
-- **新增规则**：用户可见的"工具"只能出现在 MCP 的 tools 里；CLI helper 一律放 `tools/mcp/helpers/`；部署/诊断脚本放 `scripts/`；跨应用能力放 `SDK/HelmCore/`；第三方 vendored 依赖放 `third_party/`。
+- **新增规则**：用户可见的"工具"出现在 `tools/` 下各自独立目录（`tools/mcp/`、`tools/ssh/`），**MCP server 只注册 AI 可操作的工具，系统管理类工具（如 SSH）独立成 `tools/<name>/`，不混进 MCP tools 列表**；CLI helper 一律放 `tools/mcp/helpers/`；部署/诊断脚本放 `scripts/`；跨应用能力放 `SDK/HelmCore/`；第三方 vendored 依赖放 `third_party/`。
 
 ## Build & run
 
@@ -50,6 +50,7 @@ Project memory for fast pickup. Read this before touching the build.
 - [.github/workflows/build.yml](.github/workflows/build.yml) — macos-latest, `Randomblock1/theos-action@v1` for env+SDK, helper pre-build step (`make` in each `tools/mcp/helpers/<name>/`), then `make clean && make package` at root, then `upload-artifact` of `packages/*.deb`. **Only builds rootless** (theos-action doesn't ship libroothide).
 - [tools/mcp/](tools/mcp/) — **应用层**。HelmMCP dylib source（forked from `witchan/ios-mcp`, GPL-3.0）: Tweak.x / MCPServer / 各 Manager / `IOSMCPPreferences.h` (默认端口 8686)。**用户可用的"工具"就是这里的 MCP**。
 - [tools/mcp/helpers/](tools/mcp/helpers/) — **MCP 内部 CLI 工具**（不暴露给用户，被 MCP server 调用）：每个自己 Makefile，scheme 自适应。`mcp-logreader/` (连 diagnosticd 拿 unified log，rootless + roothide 都 build)、`mcp-root/` (setuid root 命令白名单，只 roothide build + chmod 4755)、`mcp-roothelper/`、`mcp-ldid/`、`mcp-appsync/`。`README.md` 列出 Phase 2c 后续要 fork 的 helper + 各自卡点。
+- [tools/ssh/](tools/ssh/) — **独立系统工具**（不注册为 MCP 工具）。OpenSSH 生命周期管理（install/start/stop/autostart），被 Tweak.x 的 darwin SSH 事件 handler 调用（Settings -> SSH 面板驱动）。rootless 下只读可查，roothide 下经 setuid mcp-root 全量可操作。
 - [SDK/HelmCore/](SDK/HelmCore/) — **SDK 层**（跨应用复用的 dylib）。私有 header 集中声明 + HelmSystemInfo（路径/版本/scheme）+ Screen/OCR/HID 等 Manager。应用层（tools/*）只经 HelmCore 高层 API 接触系统能力。
 - [scripts/](scripts/) — **开发工具链**（部署/验证/诊断/MCP 客户端），不参与打包。
 - [HelmTweakPrefs.mm](HelmTweakPrefs.mm) — PreferenceBundle binary; `PSListController` subclass, override `specifiers` with `[self loadSpecifiersFromPlistName:@"Root" target:self]` (see gotchas — two-arg form is load-bearing).
