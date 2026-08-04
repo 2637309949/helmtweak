@@ -3,6 +3,7 @@
 #import "ClipboardManager.h"
 #import "FileSystemManager.h"
 #import "LogManager.h"
+#import "SSHManager.h"
 #import "MCPLogger.h"
 #import "IOSMCPPreferences.h"
 #import <UIKit/UIKit.h>
@@ -466,7 +467,12 @@ static NSArray<NSString *> *MCPLockGuardAllowedTools(void) {
             @"get_syslog",
             @"get_crash_logs",
             @"read_crash_log",
-            @"get_usage_guide"
+            @"get_usage_guide",
+            @"ssh_get_status",
+            @"ssh_install",
+            @"ssh_start",
+            @"ssh_stop",
+            @"ssh_set_autostart"
         ];
     });
     return tools;
@@ -2287,6 +2293,49 @@ static NSString *MCPUsageGuideString(void) {
             }
         },
         @{
+            @"name": @"ssh_get_status",
+            @"description": @"Get the status of the OpenSSH server and client on the device: whether openssh-server/openssh-client are installed, whether the sshd daemon is running, its launchd state, and whether launchd auto-start on boot is enabled. Works on both rootless and roothide. Returns structured fields: server_installed, client_installed, scp_installed, running, launchd_state, autostart, root_available, port.",
+            @"inputSchema": @{
+                @"type": @"object",
+                @"properties": @{}
+            }
+        },
+        @{
+            @"name": @"ssh_install",
+            @"description": @"Install OpenSSH server (openssh-server) and client (openssh-client) via apt-get on the device. Requires root; on roothide jailbreaks this runs through the privileged mcp-root helper. On rootless there is no root channel from this server, so the tool returns guidance to install via Sileo instead. Reboot or re-respring is not required; start the daemon with ssh_start after installing.",
+            @"inputSchema": @{
+                @"type": @"object",
+                @"properties": @{}
+            }
+        },
+        @{
+            @"name": @"ssh_start",
+            @"description": @"Start the OpenSSH daemon (sshd) via launchctl bootstrap system. Requires root (roothide only). On rootless, returns guidance to start it manually.",
+            @"inputSchema": @{
+                @"type": @"object",
+                @"properties": @{}
+            }
+        },
+        @{
+            @"name": @"ssh_stop",
+            @"description": @"Stop the OpenSSH daemon (sshd) via launchctl bootout system. Requires root (roothide only). On rootless, returns guidance to stop it manually.",
+            @"inputSchema": @{
+                @"type": @"object",
+                @"properties": @{}
+            }
+        },
+        @{
+            @"name": @"ssh_set_autostart",
+            @"description": @"Enable or disable launchd auto-start for the OpenSSH daemon at boot. Requires root (roothide only). When enabling, the daemon is also kickstarted so it starts immediately.",
+            @"inputSchema": @{
+                @"type": @"object",
+                @"properties": @{
+                    @"enabled": @{@"type": @"boolean", @"description": @"true to auto-start sshd at boot, false to disable"}
+                },
+                @"required": @[@"enabled"]
+            }
+        },
+        @{
             @"name": @"get_usage_guide",
             @"description": @"Return the full usage guide for this MCP server (the complete instructions for operating the connected iPhone: coordinate system, lock-screen handling, touch gestures, text input, app install, shell, crash logs). Call this when you need the complete operating guide, or when uncertain how to use the device tools.",
             @"inputSchema": @{
@@ -2419,6 +2468,18 @@ static NSString *MCPUsageGuideString(void) {
     // Shell command tools
     else if ([toolName isEqualToString:@"run_command"]) {
         return [self executeRunCommand:reqId args:args];
+    }
+    // SSH tools
+    else if ([toolName isEqualToString:@"ssh_get_status"]) {
+        return [self executeSSHGetStatus:reqId args:args];
+    } else if ([toolName isEqualToString:@"ssh_install"]) {
+        return [self executeSSHInstall:reqId args:args];
+    } else if ([toolName isEqualToString:@"ssh_start"]) {
+        return [self executeSSHStart:reqId args:args];
+    } else if ([toolName isEqualToString:@"ssh_stop"]) {
+        return [self executeSSHStop:reqId args:args];
+    } else if ([toolName isEqualToString:@"ssh_set_autostart"]) {
+        return [self executeSSHSetAutostart:reqId args:args];
     }
     // Brightness tools
     else if ([toolName isEqualToString:@"get_brightness"]) {
@@ -3789,6 +3850,58 @@ static NSString *MCPUsageGuideString(void) {
         return [self mcpSuccess:reqId structuredContent:resultDict isError:YES];
     }
     return [self mcpSuccess:reqId structuredContent:resultDict];
+}
+
+#pragma mark - SSH Execution
+
+- (NSDictionary *)executeSSHGetStatus:(id)reqId args:(NSDictionary *)args {
+    NSString *error = nil;
+    NSDictionary *status = [[SSHManager sharedInstance] getStatus:&error];
+    if (!status) {
+        return [self mcpSuccess:reqId text:error ?: @"Failed to get SSH status" isError:YES];
+    }
+    return [self mcpSuccess:reqId structuredContent:status];
+}
+
+- (NSDictionary *)executeSSHInstall:(id)reqId args:(NSDictionary *)args {
+    NSString *error = nil;
+    NSDictionary *result = [[SSHManager sharedInstance] installSSH:&error];
+    if (!result) {
+        return [self mcpSuccess:reqId text:error ?: @"SSH install failed" isError:YES];
+    }
+    return [self mcpSuccess:reqId structuredContent:result];
+}
+
+- (NSDictionary *)executeSSHStart:(id)reqId args:(NSDictionary *)args {
+    NSString *error = nil;
+    NSDictionary *result = [[SSHManager sharedInstance] startSSH:&error];
+    if (!result) {
+        return [self mcpSuccess:reqId text:error ?: @"SSH start failed" isError:YES];
+    }
+    return [self mcpSuccess:reqId structuredContent:result];
+}
+
+- (NSDictionary *)executeSSHStop:(id)reqId args:(NSDictionary *)args {
+    NSString *error = nil;
+    NSDictionary *result = [[SSHManager sharedInstance] stopSSH:&error];
+    if (!result) {
+        return [self mcpSuccess:reqId text:error ?: @"SSH stop failed" isError:YES];
+    }
+    return [self mcpSuccess:reqId structuredContent:result];
+}
+
+- (NSDictionary *)executeSSHSetAutostart:(id)reqId args:(NSDictionary *)args {
+    NSString *paramError = nil;
+    BOOL enabled = NO;
+    if (!MCPBoolFromArgs(args, @"enabled", YES, &enabled, &paramError)) {
+        return [self mcpError:reqId code:-32602 message:paramError];
+    }
+    NSString *error = nil;
+    NSDictionary *result = [[SSHManager sharedInstance] setAutostart:enabled error:&error];
+    if (!result) {
+        return [self mcpSuccess:reqId text:error ?: @"Failed to set SSH autostart" isError:YES];
+    }
+    return [self mcpSuccess:reqId structuredContent:result];
 }
 
 #pragma mark - Brightness Execution

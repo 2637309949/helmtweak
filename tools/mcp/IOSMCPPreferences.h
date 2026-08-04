@@ -17,6 +17,15 @@
 #define IOS_MCP_DARWIN_NOTIFICATION_STOPPED CFSTR("com.witchan.ios-mcp.control/stopped")
 // Settings -> MCP 查询当前状态
 #define IOS_MCP_DARWIN_NOTIFICATION_CHECK CFSTR("com.witchan.ios-mcp.control/check")
+// Settings -> MCP: SSH 控制事件（SSHManager 在 SpringBoard 进程内执行 root 操作）
+#define IOS_MCP_DARWIN_NOTIFICATION_SSH_STATUS CFSTR("com.witchan.ios-mcp.control/ssh-status")
+#define IOS_MCP_DARWIN_NOTIFICATION_SSH_START CFSTR("com.witchan.ios-mcp.control/ssh-start")
+#define IOS_MCP_DARWIN_NOTIFICATION_SSH_STOP CFSTR("com.witchan.ios-mcp.control/ssh-stop")
+#define IOS_MCP_DARWIN_NOTIFICATION_SSH_INSTALL CFSTR("com.witchan.ios-mcp.control/ssh-install")
+#define IOS_MCP_DARWIN_NOTIFICATION_SSH_AUTOSTART CFSTR("com.witchan.ios-mcp.control/ssh-autostart")
+// MCP -> Settings: SSH 状态已更新（写入了 sshStatus pref），Settings 重读
+#define IOS_MCP_DARWIN_NOTIFICATION_SSH_STATUS_UPDATED CFSTR("com.witchan.ios-mcp.control/ssh-status-updated")
+#define IOS_MCP_SSH_STATUS_PREFERENCE_KEY @"sshStatus"
 
 static inline BOOL IOSMCPParsePortValue(id value, uint16_t *outPort) {
     long long parsed = 0;

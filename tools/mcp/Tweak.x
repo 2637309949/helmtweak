@@ -2,6 +2,7 @@
 #import <CoreFoundation/CoreFoundation.h>
 #import "MCPServer.h"
 #import "MCPLogger.h"
+#import "SSHManager.h"
 #import "IOSMCPPreferences.h"
 
 #define IOS_MCP_LOG(fmt, ...) do { \
@@ -58,6 +59,76 @@ static uint16_t ios_mcp_start_server(void) {
 
 static void ios_mcp_stop_server(void) {
     [[MCPServer sharedInstance] stop];
+}
+
+static void ios_mcp_write_ssh_status_preference(NSDictionary *status) {
+    NSData *jsonData = nil;
+    if ([NSJSONSerialization isValidJSONObject:status]) {
+        jsonData = [NSJSONSerialization dataWithJSONObject:status options:0 error:nil];
+    }
+    if (jsonData) {
+        NSString *json = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+        CFPreferencesSetAppValue(CFSTR("sshStatus"),
+                                 (__bridge CFStringRef)(json ?: @"{}"),
+                                 CFSTR("com.witchan.ios-mcp.preferences"));
+    } else {
+        CFPreferencesSetAppValue(CFSTR("sshStatus"),
+                                 CFSTR("{}"),
+                                 CFSTR("com.witchan.ios-mcp.preferences"));
+    }
+
+    // 把实际 launchd autostart 状态写回 sshAutostart，让 Settings 的开关与真实状态一致。
+    id autostartValue = status[@"autostart"];
+    if (autostartValue) {
+        CFPreferencesSetAppValue(CFSTR("sshAutostart"),
+                                 [autostartValue boolValue] ? kCFBooleanTrue : kCFBooleanFalse,
+                                 CFSTR("com.witchan.ios-mcp.preferences"));
+    }
+
+    CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                        IOS_MCP_DARWIN_NOTIFICATION_SSH_STATUS_UPDATED,
+                                        NULL, NULL, true);
+}
+
+static void ios_mcp_handle_ssh_control(CFStringRef name) {
+    SSHManager *ssh = [SSHManager sharedInstance];
+    NSString *error = nil;
+    NSDictionary *result = nil;
+
+    if (CFEqual(name, IOS_MCP_DARWIN_NOTIFICATION_SSH_START)) {
+        result = [ssh startSSH:&error];
+    } else if (CFEqual(name, IOS_MCP_DARWIN_NOTIFICATION_SSH_STOP)) {
+        result = [ssh stopSSH:&error];
+    } else if (CFEqual(name, IOS_MCP_DARWIN_NOTIFICATION_SSH_INSTALL)) {
+        result = [ssh installSSH:&error];
+    } else if (CFEqual(name, IOS_MCP_DARWIN_NOTIFICATION_SSH_AUTOSTART)) {
+        // Settings 先把目标值写进 sshAutostart 再发事件。
+        CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
+        CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("sshAutostart"),
+                                                         CFSTR("com.witchan.ios-mcp.preferences"));
+        BOOL autostart = NO;
+        if (v && CFGetTypeID(v) == CFBooleanGetTypeID()) {
+            autostart = CFBooleanGetValue((CFBooleanRef)v);
+        }
+        if (v) CFRelease(v);
+        result = [ssh setAutostart:autostart error:&error];
+    } else {
+        result = nil;
+        error = @"unknown ssh control event";
+    }
+
+    if (result == nil && error.length == 0) {
+        error = @"unknown failure";
+    }
+
+    // 记录结果供 Settings 侧诊断展示。
+    NSString *lastResult = result[@"message"] ?: error ?: @"-";
+    CFPreferencesSetAppValue(CFSTR("sshLastResult"),
+                             (__bridge CFStringRef)lastResult,
+                             CFSTR("com.witchan.ios-mcp.preferences"));
+
+    IOS_MCP_LOG(@"SSH control result=%@", lastResult);
 }
 
 static void ios_mcp_handle_control_notification(CFNotificationCenterRef center,
@@ -120,6 +191,38 @@ static void ios_mcp_handle_control_notification(CFNotificationCenterRef center,
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
                                             ack, NULL, NULL, true);
         IOS_MCP_LOG(@"Received check request; server running=%d", server.isRunning ? 1 : 0);
+    }
+
+    if (CFEqual(name, IOS_MCP_DARWIN_NOTIFICATION_SSH_STATUS) ||
+        CFEqual(name, IOS_MCP_DARWIN_NOTIFICATION_SSH_START) ||
+        CFEqual(name, IOS_MCP_DARWIN_NOTIFICATION_SSH_STOP) ||
+        CFEqual(name, IOS_MCP_DARWIN_NOTIFICATION_SSH_INSTALL) ||
+        CFEqual(name, IOS_MCP_DARWIN_NOTIFICATION_SSH_AUTOSTART)) {
+        // SSH 操作（尤其 apt-get install）可能耗时数十秒，后台执行避免卡住 SpringBoard 主线程。
+        NSString *sshEvent = [(__bridge NSString *)name copy];
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            NSString *lastResult = nil;
+            if (![sshEvent isEqualToString:(__bridge NSString *)IOS_MCP_DARWIN_NOTIFICATION_SSH_STATUS]) {
+                ios_mcp_handle_ssh_control((__bridge CFStringRef)sshEvent);
+                CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
+                CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("sshLastResult"),
+                                                                 CFSTR("com.witchan.ios-mcp.preferences"));
+                if (v && CFGetTypeID(v) == CFStringGetTypeID()) {
+                    lastResult = (__bridge NSString *)v;
+                }
+                if (v) CFRelease(v);
+            }
+            // 纯状态刷新请求或操作完成后都写一份最新 status 回执给 Settings。
+            SSHManager *ssh = [SSHManager sharedInstance];
+            NSString *statusError = nil;
+            NSDictionary *status = [ssh getStatus:&statusError];
+            NSMutableDictionary *merged = [NSMutableDictionary dictionaryWithDictionary:status ?: @{}];
+            if (lastResult.length) {
+                merged[@"last_error"] = lastResult;
+            }
+            ios_mcp_write_ssh_status_preference(merged);
+        });
+        return;
     }
 }
 
@@ -222,6 +325,36 @@ static void ios_mcp_register_control_notifications(void) {
                                     NULL,
                                     ios_mcp_handle_control_notification,
                                     IOS_MCP_DARWIN_NOTIFICATION_STOP,
+                                    NULL,
+                                    CFNotificationSuspensionBehaviorDeliverImmediately);
+    CFNotificationCenterAddObserver(center,
+                                    NULL,
+                                    ios_mcp_handle_control_notification,
+                                    IOS_MCP_DARWIN_NOTIFICATION_SSH_STATUS,
+                                    NULL,
+                                    CFNotificationSuspensionBehaviorDeliverImmediately);
+    CFNotificationCenterAddObserver(center,
+                                    NULL,
+                                    ios_mcp_handle_control_notification,
+                                    IOS_MCP_DARWIN_NOTIFICATION_SSH_START,
+                                    NULL,
+                                    CFNotificationSuspensionBehaviorDeliverImmediately);
+    CFNotificationCenterAddObserver(center,
+                                    NULL,
+                                    ios_mcp_handle_control_notification,
+                                    IOS_MCP_DARWIN_NOTIFICATION_SSH_STOP,
+                                    NULL,
+                                    CFNotificationSuspensionBehaviorDeliverImmediately);
+    CFNotificationCenterAddObserver(center,
+                                    NULL,
+                                    ios_mcp_handle_control_notification,
+                                    IOS_MCP_DARWIN_NOTIFICATION_SSH_INSTALL,
+                                    NULL,
+                                    CFNotificationSuspensionBehaviorDeliverImmediately);
+    CFNotificationCenterAddObserver(center,
+                                    NULL,
+                                    ios_mcp_handle_control_notification,
+                                    IOS_MCP_DARWIN_NOTIFICATION_SSH_AUTOSTART,
                                     NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
 }

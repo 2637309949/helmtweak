@@ -20,6 +20,8 @@ App management: launch_app, kill_app, list_apps, list_running_apps, get_frontmos
 
 Device control: get_brightness/set_brightness, get_volume/set_volume, open_url (supports http/https and URL schemes like tel://, prefs:root=WIFI, etc.).
 
+SSH: ssh_get_status reports whether openssh-server/openssh-client are installed, whether sshd is running, and whether launchd auto-start is on. ssh_install installs openssh-server+openssh-client via apt-get, ssh_start starts the daemon, ssh_stop stops it, and ssh_set_autostart (true/false) toggles launchd auto-start at boot. These privileged operations require a roothide jailbreak (run through the setuid mcp-root helper); on rootless, ssh_get_status still works read-only, but the mutating tools return guidance to install/start SSH manually via Sileo.
+
 Device info: get_device_info for model, iOS version, battery, storage, memory, and jailbreak type/package information. Pass debug=true only when diagnosing installation integrity to include bundled helper executable status.
 
 Health checks: avoid shell brace expansion such as for i in {1..30}; ios-mcp commands often run under /bin/sh where that may execute only once. Use seq or a while loop, and use at least --connect-timeout 3 plus --max-time 5 for /health.

@@ -20,6 +20,16 @@
 			<key>isController</key>
 			<true/>
 		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>detail</key>
+			<string>SSHPrefsListController</string>
+			<key>label</key>
+			<string>SSH</string>
+			<key>isController</key>
+			<true/>
+		</dict>
 	</array>
 	<key>title</key>
 	<string>HelmTweak</string>

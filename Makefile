@@ -12,7 +12,8 @@ TWEAK_NAME = HelmMCP
 # Helpers (mcp-root/mcp-ldid/mcp-logreader/AppSync/mcp-roothelper) 见 tools/mcp/helpers/
 HelmMCP_FILES = tools/mcp/Tweak.x tools/mcp/MCPServer.m tools/mcp/MCPLogger.m \
                 tools/mcp/ClipboardManager.m \
-                tools/mcp/FileSystemManager.m tools/mcp/LogManager.m
+                tools/mcp/FileSystemManager.m tools/mcp/LogManager.m \
+                tools/mcp/SSHManager.m
 HelmMCP_CFLAGS = -fobjc-arc -Wno-unused-function -Wno-deprecated-declarations -I$(THEOS_PROJECT_DIR)/SDK
 HelmMCP_FRAMEWORKS = IOKit UIKit CoreGraphics QuartzCore MobileCoreServices AVFoundation Security Vision
 HelmMCP_ENTITLEMENTS = tools/mcp/entitlements.plist
@@ -32,7 +33,7 @@ include $(THEOS_MAKE_PATH)/tweak.mk
 
 # ===== PreferenceBundle: Settings.app 入口，显示 hello =====
 BUNDLE_NAME = HelmTweakPrefs
-HelmTweakPrefs_FILES = HelmTweakPrefs.mm MCPPrefsListController.mm
+HelmTweakPrefs_FILES = HelmTweakPrefs.mm MCPPrefsListController.mm SSHPrefsListController.mm
 HelmTweakPrefs_CFLAGS = -fobjc-arc -Wno-unused-variable -I$(THEOS_PROJECT_DIR)/SDK -I$(THEOS_PROJECT_DIR)/tools/mcp
 HelmTweakPrefs_FRAMEWORKS = UIKit Preferences
 HelmTweakPrefs_PRIVATE_FRAMEWORKS = Preferences

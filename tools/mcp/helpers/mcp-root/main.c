@@ -30,6 +30,7 @@ typedef enum {
     MCP_ALLOWED_COMMAND_LAUNCHCTL,
     MCP_ALLOWED_COMMAND_ID,
     MCP_ALLOWED_COMMAND_DPKG,
+    MCP_ALLOWED_COMMAND_APT,
 } MCPAllowedCommand;
 
 static void print_usage(const char *program) {
@@ -39,10 +40,12 @@ static void print_usage(const char *program) {
     fprintf(stderr, "  /usr/bin/mcp-appinst <ipa>\n");
     fprintf(stderr, "  /usr/bin/mcp-ldid [ldid args...]\n");
     fprintf(stderr, "  /bin/chmod 0644|0755 <app-container-path>...\n");
-    fprintf(stderr, "  /bin/launchctl kickstart -k <approved-accessibility-service>\n");
+    fprintf(stderr, "  /usr/bin/launchctl kickstart -k <approved-accessibility-service>\n");
     fprintf(stderr, "  /usr/bin/id\n");
     fprintf(stderr, "  /usr/bin/dpkg -i|--install|--unpack [safe dpkg options] <absolute .deb path>...\n");
     fprintf(stderr, "  /usr/bin/dpkg -s|--status|-r|--remove|--purge <package-id>\n");
+    fprintf(stderr, "  /usr/bin/apt-get install -y <whitelisted-package>...\n");
+    fprintf(stderr, "  /usr/bin/apt-get remove|purge <whitelisted-package>...\n");
 }
 
 static const char *resolve_command_path(const char *path) {
@@ -283,24 +286,83 @@ static int validate_chmod_arguments(int argc, char *argv[]) {
     return 1;
 }
 
-static int validate_launchctl_arguments(int argc, char *argv[]) {
-    if (argc != 5) {
-        fprintf(stderr, "launchctl usage is restricted to kickstart -k approved accessibility services\n");
+static int is_allowed_launchctl_target(const char *target) {
+    if (!target) {
         return 0;
     }
 
-    if (strcmp(argv[2], "kickstart") != 0 || strcmp(argv[3], "-k") != 0) {
-        fprintf(stderr, "launchctl arguments are not permitted\n");
+    if (strcmp(target, "system/com.apple.accessibility.AccessibilityUIServer") == 0 ||
+        strcmp(target, "system/com.apple.VoiceOverTouch") == 0 ||
+        strcmp(target, "system/com.openssh.sshd") == 0) {
+        return 1;
+    }
+
+    return 0;
+}
+
+static int is_allowed_sshd_plist(const char *path) {
+    char resolvedPath[PATH_MAX];
+
+    if (!path || path[0] != '/') {
         return 0;
     }
 
-    if (strcmp(argv[4], "system/com.apple.accessibility.AccessibilityUIServer") != 0 &&
-        strcmp(argv[4], "system/com.apple.VoiceOverTouch") != 0) {
-        fprintf(stderr, "launchctl target is not permitted: %s\n", argv[4] ? argv[4] : "(null)");
+    if (!canonicalize_existing_bootstrap_path(path, resolvedPath, sizeof(resolvedPath))) {
+        fprintf(stderr, "launchctl bootstrap plist does not exist: %s\n", path);
+        return 0;
+    }
+
+    if (strstr(resolvedPath, "/Library/LaunchDaemons/com.openssh.sshd.plist") == NULL) {
+        fprintf(stderr, "launchctl bootstrap is restricted to the openssh sshd plist: %s\n", path);
         return 0;
     }
 
     return 1;
+}
+
+static int validate_launchctl_arguments(int argc, char *argv[]) {
+    /*
+     Allowed forms (iOS jailbreak SSH / accessibility control):
+       launchctl kickstart -k <approved-service>
+       launchctl bootout system/<approved-service>
+       launchctl enable system/<approved-service>
+       launchctl disable system/<approved-service>
+       launchctl bootstrap system <sshd-plist-path>
+     */
+    if (argc < 4) {
+        fprintf(stderr, "launchctl usage is restricted to approved service operations\n");
+        return 0;
+    }
+
+    const char *verb = argv[2];
+
+    if (strcmp(verb, "kickstart") == 0) {
+        if (argc != 5 || strcmp(argv[3], "-k") != 0 || !is_allowed_launchctl_target(argv[4])) {
+            fprintf(stderr, "launchctl kickstart target is not permitted\n");
+            return 0;
+        }
+        return 1;
+    }
+
+    if (strcmp(verb, "bootstrap") == 0) {
+        if (argc != 5 || strcmp(argv[3], "system") != 0 || !is_allowed_sshd_plist(argv[4])) {
+            fprintf(stderr, "launchctl bootstrap is restricted to the openssh sshd plist\n");
+            return 0;
+        }
+        return 1;
+    }
+
+    if (strcmp(verb, "bootout") == 0 || strcmp(verb, "enable") == 0 || strcmp(verb, "disable") == 0 ||
+        strcmp(verb, "print") == 0) {
+        if (argc != 4 || !is_allowed_launchctl_target(argv[3])) {
+            fprintf(stderr, "launchctl %s target is not permitted\n", verb);
+            return 0;
+        }
+        return 1;
+    }
+
+    fprintf(stderr, "launchctl verb is not permitted: %s\n", verb);
+    return 0;
 }
 
 static int is_allowed_dpkg_option(const char *arg) {
@@ -450,6 +512,73 @@ static int validate_dpkg_arguments(int argc, char *argv[]) {
     return 1;
 }
 
+static int is_allowed_apt_package(const char *package_id) {
+    static const char *const allowedPackages[] = {
+        "dropbear",
+        "openssh-client",
+        "openssh-server",
+    };
+    size_t i;
+
+    if (!package_id || package_id[0] == '\0' || package_id[0] == '-') {
+        return 0;
+    }
+
+    for (i = 0; i < sizeof(allowedPackages) / sizeof(allowedPackages[0]); i++) {
+        if (strcmp(package_id, allowedPackages[i]) == 0) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static int validate_apt_arguments(int argc, char *argv[]) {
+    int i;
+    int operation = 0; /* 0 = none, 1 = install, 2 = remove/purge */
+
+    if (argc < 4) {
+        fprintf(stderr, "apt-get usage is restricted to install/remove/purge of approved packages\n");
+        return 0;
+    }
+
+    if (strcmp(argv[2], "install") == 0) {
+        if (argc < 5 || strcmp(argv[3], "-y") != 0) {
+            fprintf(stderr, "apt-get install requires -y to be non-interactive\n");
+            return 0;
+        }
+        operation = 1;
+        i = 4;
+    } else if (strcmp(argv[2], "remove") == 0 || strcmp(argv[2], "purge") == 0) {
+        operation = 2;
+        i = 3;
+    } else {
+        fprintf(stderr, "apt-get verb is not permitted: %s\n", argv[2]);
+        return 0;
+    }
+
+    for (; i < argc; i++) {
+        const char *arg = argv[i];
+
+        if (!arg || arg[0] == '\0') {
+            fprintf(stderr, "invalid empty apt-get argument\n");
+            return 0;
+        }
+
+        if (arg[0] == '-') {
+            fprintf(stderr, "apt-get option is not permitted: %s\n", arg);
+            return 0;
+        }
+
+        if (!is_allowed_apt_package(arg)) {
+            fprintf(stderr, "apt-get package is not permitted: %s\n", arg);
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
 static MCPAllowedCommand classify_allowed_command(const char *command_path) {
     struct {
         const char *logical_path;
@@ -468,6 +597,8 @@ static MCPAllowedCommand classify_allowed_command(const char *command_path) {
         {"/var/jb/usr/bin/id", MCP_ALLOWED_COMMAND_ID},
         {"/usr/bin/dpkg", MCP_ALLOWED_COMMAND_DPKG},
         {"/var/jb/usr/bin/dpkg", MCP_ALLOWED_COMMAND_DPKG},
+        {"/usr/bin/apt-get", MCP_ALLOWED_COMMAND_APT},
+        {"/var/jb/usr/bin/apt-get", MCP_ALLOWED_COMMAND_APT},
     };
     size_t i;
 
@@ -518,6 +649,9 @@ int main(int argc, char *argv[]) {
         return 126;
     }
     if (allowedCommand == MCP_ALLOWED_COMMAND_DPKG && !validate_dpkg_arguments(argc, argv)) {
+        return 126;
+    }
+    if (allowedCommand == MCP_ALLOWED_COMMAND_APT && !validate_apt_arguments(argc, argv)) {
         return 126;
     }
 
