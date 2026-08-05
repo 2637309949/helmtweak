@@ -10,6 +10,8 @@
 		<string>HelmTweakPrefs</string>
 		<key>detail</key>
 		<string>HelmTweakPrefsListController</string>
+		<key>icon</key>
+		<string>icon.png</string>
 		<key>label</key>
 		<string>HelmTweak</string>
 		<key>isController</key>
