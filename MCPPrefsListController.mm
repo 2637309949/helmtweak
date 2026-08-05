@@ -33,8 +33,8 @@
 @property (nonatomic, strong) UISwitch *toggleSwitch;
 @property (nonatomic, assign) BOOL logViewerInstalled;
 @property (nonatomic, strong) UILabel *logTextLabel;
+@property (nonatomic, strong) UIButton *logClearButton;
 @property (nonatomic, strong) UIButton *logRefreshButton;
-@property (nonatomic, strong) UILabel *logTimeLabel;
 @property (nonatomic, strong) UIView *logFooterView;
 @end
 
@@ -287,24 +287,28 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
 }
 
 // 构建日志 footer：只创建控件，frame 统一在 layoutLogFooter 里按当前真实宽度计算。
+// 布局：顶部日志区，下面一排「清空日志」「刷新日志」按钮（去掉了原来顶部的时间/刷新行）。
 - (void)buildLogFooterWithTable:(UITableView *)table {
     UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, table.bounds.size.width, 253)];
     footer.autoresizingMask = UIViewAutoresizingFlexibleWidth;
 
-    UILabel *time = [[UILabel alloc] initWithFrame:CGRectZero];
-    time.font = [UIFont systemFontOfSize:13.0];
-    time.textColor = [UIColor secondaryLabelColor];
-    time.text = @"暂无日志，点右上角刷新";
-    [footer addSubview:time];
-    self.logTimeLabel = time;
+    UIButton *clearBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    clearBtn.frame = CGRectZero;
+    [clearBtn setTitle:@"清空日志" forState:UIControlStateNormal];
+    [clearBtn.titleLabel setFont:[UIFont systemFontOfSize:15.0]];
+    // 文字左对齐，贴按钮左缘（与下方日志区标题对齐）
+    clearBtn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+    clearBtn.contentVerticalAlignment = UIControlContentVerticalAlignmentCenter;
+    [clearBtn addTarget:self action:@selector(clearLogsTapped:) forControlEvents:UIControlEventTouchUpInside];
+    [footer addSubview:clearBtn];
+    self.logClearButton = clearBtn;
 
     UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
     btn.frame = CGRectZero;
-    [btn setTitle:@"刷新" forState:UIControlStateNormal];
-    [btn.titleLabel setFont:[UIFont systemFontOfSize:13.0]];
-    // 文字右对齐，贴按钮右缘：按钮右缘=开关右缘，文字右缘才能与开关右缘对齐
-    btn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentRight;
-    btn.contentVerticalAlignment = UIControlContentVerticalAlignmentBottom;
+    [btn setTitle:@"刷新日志" forState:UIControlStateNormal];
+    [btn.titleLabel setFont:[UIFont systemFontOfSize:15.0]];
+    btn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+    btn.contentVerticalAlignment = UIControlContentVerticalAlignmentCenter;
     [btn addTarget:self action:@selector(refreshLogsTapped:) forControlEvents:UIControlEventTouchUpInside];
     [footer addSubview:btn];
     self.logRefreshButton = btn;
@@ -322,7 +326,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     self.logFooterView = footer;
 }
 
-// footer 固定高度：15 条日志 + 顶部行。所有 frame 在此用当前 table 宽度统一计算。
+// footer 固定高度：顶部日志区 + 下面两个按钮行。所有 frame 在此用当前 table 宽度统一计算。
 - (void)layoutLogFooter {
     UITableView *table = [self valueForKey:@"table"];
     if (!table || !self.logFooterView) return;
@@ -330,44 +334,29 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     CGFloat width = table.bounds.size.width;
     CGFloat inset = 16.0;
     CGFloat footerTop = 8.0;       // 距最后一行间距
-    CGFloat headerH = 20.0;        // 顶部时间+刷新行高
-    CGFloat logH = 225.0;          // 15 行日志高度
-    CGFloat btnW = 56.0;
+    CGFloat btnH = 40.0;           // 每个按钮行高
+    CGFloat logH = 165.0;          // 日志区高度
 
     CGRect f = self.logFooterView.frame;
     f.size.width = width;
-    f.size.height = footerTop + headerH + logH;
+    f.size.height = footerTop + logH + btnH * 2;
     self.logFooterView.frame = f;
 
     // 文本左缘基准：设置项标题在 x=32（16 卡片边距 + 16 文本内边距）。
-    // 时间戳与日志区与标题行严格左对齐。
-    CGFloat textX = inset + 16;          // 32pt，与"服务/启动日志"文本左缘一致
+    CGFloat textX = inset + 16;          // 与"服务/启动日志"文本左缘一致
 
-    // 刷新按钮右缘 = 上面开关行 UISwitch 的真实右缘（与开关右对齐）。
-    // 取当前可见的任一 UISwitch accessory 右缘；滚动后看不到开关时退回标准边距。
-    CGFloat switchRight = width - inset; // 默认：开关右缘 = 卡片右边距
-    for (UITableViewCell *cell in [table visibleCells]) {
-        if ([cell.accessoryView isKindOfClass:[UISwitch class]]) {
-            CGRect accessoryFrame = [table convertRect:cell.accessoryView.frame
-                                              fromView:cell.accessoryView.superview];
-            switchRight = CGRectGetMaxX(accessoryFrame);
-            break;
-        }
-    }
-    CGFloat btnX = switchRight - btnW;   // 刷新按钮右缘 = 开关右缘
+    // 顶部日志区：与标题行左对齐
+    self.logTextLabel.frame = CGRectMake(textX, footerTop, width - textX - inset, logH);
 
-    // 时间/刷新文字在各自框内底部对齐（不垂直居中），与下方日志区衔接更自然。
-    CGFloat lineH = self.logTimeLabel.font.lineHeight;
-    self.logTimeLabel.frame = CGRectMake(textX, footerTop + headerH - lineH, btnX - textX - 8, lineH);
-    // 刷新按钮：右缘与上面开关行的 UISwitch 右缘对齐
-    self.logRefreshButton.frame = CGRectMake(btnX, footerTop, btnW, headerH);
-    // 日志区：与标题行左对齐
-    self.logTextLabel.frame = CGRectMake(textX, footerTop + headerH, width - textX - inset, logH);
+    // 下面两个按钮：清空日志在上，刷新日志在下，都左对齐
+    CGFloat btnY = footerTop + logH;
+    self.logClearButton.frame = CGRectMake(textX, btnY, width - textX - inset, btnH);
+    self.logRefreshButton.frame = CGRectMake(textX, btnY + btnH, width - textX - inset, btnH);
 
     table.tableFooterView = self.logFooterView;
 }
 
-// 「刷新」按钮：点击转圈刷新日志。
+// 「刷新日志」按钮：点击转圈刷新日志。
 - (void)refreshLogsTapped:(UIButton *)sender {
     [self performLogRefreshWithButton:sender];
 }
@@ -381,15 +370,9 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     if (button) {
         spinner = [[UIActivityIndicatorView alloc]
             initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-        // 转圈与“刷新”文字同位置：按钮文字右对齐+底部对齐，按文字尺寸反推文字中心。
-        NSString *title = [button titleForState:UIControlStateNormal];
-        CGSize ts = [title sizeWithAttributes:@{NSFontAttributeName: button.titleLabel.font}];
-        CGRect titleFrame = CGRectMake(button.bounds.size.width - ts.width,
-                                       button.bounds.size.height - ts.height,
-                                       ts.width, ts.height);
-        spinner.frame = CGRectMake(CGRectGetMidX(titleFrame) - 10, CGRectGetMidY(titleFrame) - 10, 20, 20);
+        // 转圈覆盖在按钮文字上方（按钮文字左对齐，转圈放在文字左侧）。
+        spinner.frame = CGRectMake(8, (button.bounds.size.height - 20) / 2, 20, 20);
         [button addSubview:spinner];
-        [button setTitle:@"" forState:UIControlStateNormal];
         [spinner startAnimating];
     }
 
@@ -401,7 +384,6 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
         [self refreshLogViewer];
         self.logViewerInstalled = NO;
         [spinner removeFromSuperview];
-        if (button) [button setTitle:@"刷新" forState:UIControlStateNormal];
     });
 }
 
@@ -413,15 +395,11 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     if (!(self.isViewLoaded && self.view.window != nil)) return;  // 不在当前看板不读
     NSArray<NSString *> *lines = [self lastLogLines:15];  // 最新在前
     if (!lines.count) {
-        self.logTextLabel.text = @"";
-        self.logTimeLabel.text = @"暂无日志，点右上角刷新";
+        self.logTextLabel.text = @"暂无日志";
         return;
     }
 
-    NSString *newestTime = [self timestampFromLogLine:lines.firstObject];
-    self.logTimeLabel.text = newestTime ?: @"";
-
-    // 每行都去掉时间戳+pid，只留 message（时间统一显示在左上角 label）。
+    // 每行都去掉时间戳+pid，只留 message。
     // 单行超宽截断加省略号，不换行。
     NSMutableArray<NSString *> *display = [NSMutableArray array];
     CGFloat maxWidth = self.logTextLabel.bounds.size.width;
@@ -432,8 +410,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     if (display.count) {
         self.logTextLabel.text = [display componentsJoinedByString:@"\n"];
     } else {
-        self.logTextLabel.text = @"";
-        self.logTimeLabel.text = @"暂无日志，点右上角刷新";
+        self.logTextLabel.text = @"暂无日志";
     }
 }
 
@@ -581,7 +558,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     [self scheduleStatusTimeout];
 }
 
-- (void)clearLogs:(PSSpecifier *)spec {
+- (void)clearLogsTapped:(UIButton *)sender {
     // 清日志文件（不依赖 MCPLogger 类，Settings 进程没有它）。
     // 清 helmtweak + HelmCore 两个日志目录。
     NSFileManager *fm = [NSFileManager defaultManager];
@@ -613,7 +590,6 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     // 清空后显示"已清空"，不自动重读（server 还在写，重读会有新日志）。
     if (self.logTextLabel) {
         self.logTextLabel.text = @"已清空";
-        self.logTimeLabel.text = @"";
     }
 }
 

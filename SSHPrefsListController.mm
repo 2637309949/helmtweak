@@ -28,8 +28,8 @@
 @property (nonatomic, strong) PSSpecifier *toggleSpec;
 @property (nonatomic, assign) BOOL busy;
 @property (nonatomic, strong) UILabel *logTextLabel;
+@property (nonatomic, strong) UIButton *logClearButton;
 @property (nonatomic, strong) UIButton *logRefreshButton;
-@property (nonatomic, strong) UILabel *logTimeLabel;
 @property (nonatomic, strong) UIView *logFooterView;
 @property (nonatomic, assign) BOOL logViewerInstalled;
 @end
@@ -58,7 +58,7 @@
     if (!_specifiers) {
         _specifiers = [self loadSpecifiersFromPlistName:@"SSH" target:self];
         for (PSSpecifier *spec in _specifiers) {
-            if ([[spec name] isEqualToString:@"状态：加载中"]) {
+            if ([[spec name] isEqualToString:@"加载中"]) {
                 self.statusSpec = spec;
             } else if ([[spec name] isEqualToString:@"启动 SSH"]) {
                 self.toggleSpec = spec;
@@ -153,14 +153,11 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
 
     NSString *statusText;
     if (!installed) {
-        statusText = @"状态：未安装 openssh-server";
+        statusText = @"未安装 openssh-server";
     } else if (running) {
-        statusText = @"状态：运行中 (端口 22)";
+        statusText = @"运行中";
     } else {
-        statusText = @"状态：已安装，未运行";
-    }
-    if (self.sshStatus[@"last_error"]) {
-        statusText = [NSString stringWithFormat:@"%@｜%@", statusText, self.sshStatus[@"last_error"]];
+        statusText = @"已安装，未运行";
     }
 
     NSString *toggleText;
@@ -257,19 +254,22 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
     UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, table.bounds.size.width, 253)];
     footer.autoresizingMask = UIViewAutoresizingFlexibleWidth;
 
-    UILabel *time = [[UILabel alloc] initWithFrame:CGRectZero];
-    time.font = [UIFont systemFontOfSize:13.0];
-    time.textColor = [UIColor secondaryLabelColor];
-    time.text = @"暂无日志，点右上角刷新";
-    [footer addSubview:time];
-    self.logTimeLabel = time;
+    UIButton *clearBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    clearBtn.frame = CGRectZero;
+    [clearBtn setTitle:@"清空日志" forState:UIControlStateNormal];
+    [clearBtn.titleLabel setFont:[UIFont systemFontOfSize:15.0]];
+    clearBtn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+    clearBtn.contentVerticalAlignment = UIControlContentVerticalAlignmentCenter;
+    [clearBtn addTarget:self action:@selector(clearLogsTapped:) forControlEvents:UIControlEventTouchUpInside];
+    [footer addSubview:clearBtn];
+    self.logClearButton = clearBtn;
 
     UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
     btn.frame = CGRectZero;
-    [btn setTitle:@"刷新" forState:UIControlStateNormal];
-    [btn.titleLabel setFont:[UIFont systemFontOfSize:13.0]];
-    btn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentRight;
-    btn.contentVerticalAlignment = UIControlContentVerticalAlignmentBottom;
+    [btn setTitle:@"刷新日志" forState:UIControlStateNormal];
+    [btn.titleLabel setFont:[UIFont systemFontOfSize:15.0]];
+    btn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+    btn.contentVerticalAlignment = UIControlContentVerticalAlignmentCenter;
     [btn addTarget:self action:@selector(refreshLogsTapped:) forControlEvents:UIControlEventTouchUpInside];
     [footer addSubview:btn];
     self.logRefreshButton = btn;
@@ -294,31 +294,21 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
     CGFloat width = table.bounds.size.width;
     CGFloat inset = 16.0;
     CGFloat footerTop = 8.0;
-    CGFloat headerH = 20.0;
-    CGFloat logH = 225.0;
-    CGFloat btnW = 56.0;
+    CGFloat btnH = 40.0;
+    CGFloat logH = 165.0;
 
     CGRect f = self.logFooterView.frame;
     f.size.width = width;
-    f.size.height = footerTop + headerH + logH;
+    f.size.height = footerTop + logH + btnH * 2;
     self.logFooterView.frame = f;
 
     CGFloat textX = inset + 16;
-    CGFloat switchRight = width - inset;
-    for (UITableViewCell *cell in [table visibleCells]) {
-        if ([cell.accessoryView isKindOfClass:[UISwitch class]]) {
-            CGRect accessoryFrame = [table convertRect:cell.accessoryView.frame
-                                              fromView:cell.accessoryView.superview];
-            switchRight = CGRectGetMaxX(accessoryFrame);
-            break;
-        }
-    }
-    CGFloat btnX = switchRight - btnW;
 
-    CGFloat lineH = self.logTimeLabel.font.lineHeight;
-    self.logTimeLabel.frame = CGRectMake(textX, footerTop + headerH - lineH, btnX - textX - 8, lineH);
-    self.logRefreshButton.frame = CGRectMake(btnX, footerTop, btnW, headerH);
-    self.logTextLabel.frame = CGRectMake(textX, footerTop + headerH, width - textX - inset, logH);
+    self.logTextLabel.frame = CGRectMake(textX, footerTop, width - textX - inset, logH);
+
+    CGFloat btnY = footerTop + logH;
+    self.logClearButton.frame = CGRectMake(textX, btnY, width - textX - inset, btnH);
+    self.logRefreshButton.frame = CGRectMake(textX, btnY + btnH, width - textX - inset, btnH);
 
     table.tableFooterView = self.logFooterView;
 }
@@ -335,14 +325,8 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
     if (button) {
         spinner = [[UIActivityIndicatorView alloc]
             initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-        NSString *title = [button titleForState:UIControlStateNormal];
-        CGSize ts = [title sizeWithAttributes:@{NSFontAttributeName: button.titleLabel.font}];
-        CGRect titleFrame = CGRectMake(button.bounds.size.width - ts.width,
-                                       button.bounds.size.height - ts.height,
-                                       ts.width, ts.height);
-        spinner.frame = CGRectMake(CGRectGetMidX(titleFrame) - 10, CGRectGetMidY(titleFrame) - 10, 20, 20);
+        spinner.frame = CGRectMake(8, (button.bounds.size.height - 20) / 2, 20, 20);
         [button addSubview:spinner];
-        [button setTitle:@"" forState:UIControlStateNormal];
         [spinner startAnimating];
     }
 
@@ -354,7 +338,6 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
         [self refreshLogViewer];
         self.logViewerInstalled = NO;
         [spinner removeFromSuperview];
-        if (button) [button setTitle:@"刷新" forState:UIControlStateNormal];
     });
 }
 
@@ -363,13 +346,9 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
     if (!(self.isViewLoaded && self.view.window != nil)) return;
     NSArray<NSString *> *lines = [self lastSSHLogLines:15];
     if (!lines.count) {
-        self.logTextLabel.text = @"";
-        self.logTimeLabel.text = @"暂无日志，点右上角刷新";
+        self.logTextLabel.text = @"暂无日志";
         return;
     }
-
-    NSString *newestTime = [self timestampFromSSHLogLine:lines.firstObject];
-    self.logTimeLabel.text = newestTime ?: @"";
 
     NSMutableArray<NSString *> *display = [NSMutableArray array];
     CGFloat maxWidth = self.logTextLabel.bounds.size.width;
@@ -380,8 +359,7 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
     if (display.count) {
         self.logTextLabel.text = [display componentsJoinedByString:@"\n"];
     } else {
-        self.logTextLabel.text = @"";
-        self.logTimeLabel.text = @"暂无日志，点右上角刷新";
+        self.logTextLabel.text = @"暂无日志";
     }
 }
 
@@ -450,6 +428,34 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
         i--;
     }
     return result;
+}
+
+- (void)clearLogsTapped:(UIButton *)sender {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSArray<NSString *> *paths = @[
+        @"/private/var/mobile/Library/Logs/helmtweak/ssh.log",
+        @"/var/mobile/Library/Logs/helmtweak/ssh.log",
+    ];
+
+    BOOL allCleared = YES;
+    NSString *lastError = nil;
+    for (NSString *path in paths) {
+        NSError *e = nil;
+        if ([fm fileExistsAtPath:path] && ![fm removeItemAtPath:path error:&e]) {
+            allCleared = NO;
+            if (!lastError) lastError = e.localizedDescription;
+        }
+    }
+
+    NSString *message = allCleared ? @"已清空" : [@"清空失败: " stringByAppendingString:lastError ?: @"未知错误"];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"清空日志"
+                                                                   message:message
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+    if (self.logTextLabel) {
+        self.logTextLabel.text = @"已清空";
+    }
 }
 
 @end

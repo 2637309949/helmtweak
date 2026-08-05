@@ -52,7 +52,7 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>调试</string>
+			<string>设置</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -65,14 +65,6 @@
 			<string>debugLoggingEnabled</string>
 			<key>label</key>
 			<string>启动日志</string>
-		</dict>
-		<dict>
-			<key>action</key>
-			<string>clearLogs:</string>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>label</key>
-			<string>清空日志</string>
 		</dict>
 	</array>
 	<key>title</key>
