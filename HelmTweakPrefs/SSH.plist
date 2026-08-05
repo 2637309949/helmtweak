@@ -66,6 +66,26 @@
 			<key>label</key>
 			<string>开机自启</string>
 		</dict>
+		<dict>
+			<key>action</key>
+			<string>refreshLogs:</string>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>id</key>
+			<string>sshRefreshLog</string>
+			<key>label</key>
+			<string>刷新日志</string>
+		</dict>
+		<dict>
+			<key>action</key>
+			<string>clearLogs:</string>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>id</key>
+			<string>sshClearLog</string>
+			<key>label</key>
+			<string>清空日志</string>
+		</dict>
 	</array>
 	<key>title</key>
 	<string>SSH</string>

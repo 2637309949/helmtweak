@@ -28,8 +28,6 @@
 @property (nonatomic, strong) PSSpecifier *toggleSpec;
 @property (nonatomic, assign) BOOL busy;
 @property (nonatomic, strong) UILabel *logTextLabel;
-@property (nonatomic, strong) UIButton *logClearButton;
-@property (nonatomic, strong) UIButton *logRefreshButton;
 @property (nonatomic, strong) UIView *logFooterView;
 @property (nonatomic, assign) BOOL logViewerInstalled;
 @end
@@ -250,29 +248,10 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
     [self refreshLogViewer];
 }
 
+// footer 只负责日志文本展示（清空/刷新已改为设置列表里的正常 PSButtonCell 行）。
 - (void)buildSSHLogFooterWithTable:(UITableView *)table {
-    UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, table.bounds.size.width, 253)];
+    UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, table.bounds.size.width, 180)];
     footer.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-
-    UIButton *clearBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    clearBtn.frame = CGRectZero;
-    [clearBtn setTitle:@"清空日志" forState:UIControlStateNormal];
-    [clearBtn.titleLabel setFont:[UIFont systemFontOfSize:15.0]];
-    clearBtn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
-    clearBtn.contentVerticalAlignment = UIControlContentVerticalAlignmentCenter;
-    [clearBtn addTarget:self action:@selector(clearLogsTapped:) forControlEvents:UIControlEventTouchUpInside];
-    [footer addSubview:clearBtn];
-    self.logClearButton = clearBtn;
-
-    UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
-    btn.frame = CGRectZero;
-    [btn setTitle:@"刷新日志" forState:UIControlStateNormal];
-    [btn.titleLabel setFont:[UIFont systemFontOfSize:15.0]];
-    btn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
-    btn.contentVerticalAlignment = UIControlContentVerticalAlignmentCenter;
-    [btn addTarget:self action:@selector(refreshLogsTapped:) forControlEvents:UIControlEventTouchUpInside];
-    [footer addSubview:btn];
-    self.logRefreshButton = btn;
 
     UILabel *log = [[UILabel alloc] initWithFrame:CGRectZero];
     log.numberOfLines = 15;
@@ -294,41 +273,33 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
     CGFloat width = table.bounds.size.width;
     CGFloat inset = 16.0;
     CGFloat footerTop = 8.0;
-    CGFloat btnH = 40.0;
-    CGFloat logH = 165.0;
+    CGFloat logH = 172.0;
 
     CGRect f = self.logFooterView.frame;
     f.size.width = width;
-    f.size.height = footerTop + logH + btnH * 2;
+    f.size.height = footerTop + logH;
     self.logFooterView.frame = f;
 
     CGFloat textX = inset + 16;
 
     self.logTextLabel.frame = CGRectMake(textX, footerTop, width - textX - inset, logH);
 
-    CGFloat btnY = footerTop + logH;
-    self.logClearButton.frame = CGRectMake(textX, btnY, width - textX - inset, btnH);
-    self.logRefreshButton.frame = CGRectMake(textX, btnY + btnH, width - textX - inset, btnH);
-
     table.tableFooterView = self.logFooterView;
 }
 
-- (void)refreshLogsTapped:(UIButton *)sender {
-    [self performLogRefreshWithButton:sender];
+// 「刷新日志」cell 点击。
+- (void)refreshLogs:(PSSpecifier *)spec {
+    [self performLogRefresh];
 }
 
-- (void)performLogRefreshWithButton:(UIButton *)button {
+// 「清空日志」cell 点击。
+- (void)clearLogs:(PSSpecifier *)spec {
+    [self clearLogsTapped:nil];
+}
+
+- (void)performLogRefresh {
     if (self.logViewerInstalled) return;
     self.logViewerInstalled = YES;
-
-    UIActivityIndicatorView *spinner = nil;
-    if (button) {
-        spinner = [[UIActivityIndicatorView alloc]
-            initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-        spinner.frame = CGRectMake(8, (button.bounds.size.height - 20) / 2, 20, 20);
-        [button addSubview:spinner];
-        [spinner startAnimating];
-    }
 
     __weak typeof(self) weakSelf = self;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
@@ -337,7 +308,6 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
         if (!self) return;
         [self refreshLogViewer];
         self.logViewerInstalled = NO;
-        [spinner removeFromSuperview];
     });
 }
 

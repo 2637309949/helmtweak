@@ -33,8 +33,6 @@
 @property (nonatomic, strong) UISwitch *toggleSwitch;
 @property (nonatomic, assign) BOOL logViewerInstalled;
 @property (nonatomic, strong) UILabel *logTextLabel;
-@property (nonatomic, strong) UIButton *logClearButton;
-@property (nonatomic, strong) UIButton *logRefreshButton;
 @property (nonatomic, strong) UIView *logFooterView;
 @end
 
@@ -88,9 +86,9 @@
     }
     [super setPreferenceValue:value specifier:spec];
 
-    // 服务/启动日志开关状态变化后自动刷新日志（仅日志开启时有效，刷新时按钮转圈）。
+    // 服务/启动日志开关状态变化后自动刷新日志（仅日志开启时有效）。
     if ((isToggle || isLogging) && [self debugLoggingEnabled]) {
-        [self performLogRefreshWithButton:self.logRefreshButton];
+        [self performLogRefresh];
     }
 }
 
@@ -286,32 +284,11 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     }
 }
 
-// 构建日志 footer：只创建控件，frame 统一在 layoutLogFooter 里按当前真实宽度计算。
-// 布局：顶部日志区，下面一排「清空日志」「刷新日志」按钮（去掉了原来顶部的时间/刷新行）。
+// 构建日志 footer：只创建日志文本控件，frame 统一在 layoutLogFooter 里按当前真实宽度计算。
+// （清空/刷新已改为设置列表里的正常 PSButtonCell 行，footer 只负责日志文本展示。）
 - (void)buildLogFooterWithTable:(UITableView *)table {
-    UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, table.bounds.size.width, 253)];
+    UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, table.bounds.size.width, 180)];
     footer.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-
-    UIButton *clearBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    clearBtn.frame = CGRectZero;
-    [clearBtn setTitle:@"清空日志" forState:UIControlStateNormal];
-    [clearBtn.titleLabel setFont:[UIFont systemFontOfSize:15.0]];
-    // 文字左对齐，贴按钮左缘（与下方日志区标题对齐）
-    clearBtn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
-    clearBtn.contentVerticalAlignment = UIControlContentVerticalAlignmentCenter;
-    [clearBtn addTarget:self action:@selector(clearLogsTapped:) forControlEvents:UIControlEventTouchUpInside];
-    [footer addSubview:clearBtn];
-    self.logClearButton = clearBtn;
-
-    UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
-    btn.frame = CGRectZero;
-    [btn setTitle:@"刷新日志" forState:UIControlStateNormal];
-    [btn.titleLabel setFont:[UIFont systemFontOfSize:15.0]];
-    btn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
-    btn.contentVerticalAlignment = UIControlContentVerticalAlignmentCenter;
-    [btn addTarget:self action:@selector(refreshLogsTapped:) forControlEvents:UIControlEventTouchUpInside];
-    [footer addSubview:btn];
-    self.logRefreshButton = btn;
 
     UILabel *log = [[UILabel alloc] initWithFrame:CGRectZero];
     log.numberOfLines = 15;
@@ -326,7 +303,7 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     self.logFooterView = footer;
 }
 
-// footer 固定高度：顶部日志区 + 下面两个按钮行。所有 frame 在此用当前 table 宽度统一计算。
+// footer 固定高度：顶部日志区。所有 frame 在此用当前 table 宽度统一计算。
 - (void)layoutLogFooter {
     UITableView *table = [self valueForKey:@"table"];
     if (!table || !self.logFooterView) return;
@@ -334,12 +311,11 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     CGFloat width = table.bounds.size.width;
     CGFloat inset = 16.0;
     CGFloat footerTop = 8.0;       // 距最后一行间距
-    CGFloat btnH = 40.0;           // 每个按钮行高
-    CGFloat logH = 165.0;          // 日志区高度
+    CGFloat logH = 172.0;          // 日志区高度
 
     CGRect f = self.logFooterView.frame;
     f.size.width = width;
-    f.size.height = footerTop + logH + btnH * 2;
+    f.size.height = footerTop + logH;
     self.logFooterView.frame = f;
 
     // 文本左缘基准：设置项标题在 x=32（16 卡片边距 + 16 文本内边距）。
@@ -348,33 +324,23 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     // 顶部日志区：与标题行左对齐
     self.logTextLabel.frame = CGRectMake(textX, footerTop, width - textX - inset, logH);
 
-    // 下面两个按钮：清空日志在上，刷新日志在下，都左对齐
-    CGFloat btnY = footerTop + logH;
-    self.logClearButton.frame = CGRectMake(textX, btnY, width - textX - inset, btnH);
-    self.logRefreshButton.frame = CGRectMake(textX, btnY + btnH, width - textX - inset, btnH);
-
     table.tableFooterView = self.logFooterView;
 }
 
-// 「刷新日志」按钮：点击转圈刷新日志。
-- (void)refreshLogsTapped:(UIButton *)sender {
-    [self performLogRefreshWithButton:sender];
+// 「刷新日志」cell 点击：转圈刷新日志。
+- (void)refreshLogs:(PSSpecifier *)spec {
+    [self performLogRefresh];
 }
 
-// 转圈刷新日志：按钮转圈 + 0.3s 后刷新。button 传 nil 则只刷新不转圈。
-- (void)performLogRefreshWithButton:(UIButton *)button {
+// 「清空日志」cell 点击。
+- (void)clearLogs:(PSSpecifier *)spec {
+    [self clearLogsTapped:nil];
+}
+
+// 刷新日志：0.3s 后刷新。
+- (void)performLogRefresh {
     if (self.logViewerInstalled) return;  // 正在刷新
     self.logViewerInstalled = YES;
-
-    UIActivityIndicatorView *spinner = nil;
-    if (button) {
-        spinner = [[UIActivityIndicatorView alloc]
-            initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-        // 转圈覆盖在按钮文字上方（按钮文字左对齐，转圈放在文字左侧）。
-        spinner.frame = CGRectMake(8, (button.bounds.size.height - 20) / 2, 20, 20);
-        [button addSubview:spinner];
-        [spinner startAnimating];
-    }
 
     __weak typeof(self) weakSelf = self;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
@@ -383,7 +349,6 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
         if (!self) return;
         [self refreshLogViewer];
         self.logViewerInstalled = NO;
-        [spinner removeFromSuperview];
     });
 }
 
