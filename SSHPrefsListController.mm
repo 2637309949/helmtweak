@@ -27,9 +27,6 @@
 @property (nonatomic, strong) PSSpecifier *statusSpec;
 @property (nonatomic, strong) PSSpecifier *toggleSpec;
 @property (nonatomic, assign) BOOL busy;
-@property (nonatomic, strong) UILabel *logTextLabel;
-@property (nonatomic, strong) UIView *logFooterView;
-@property (nonatomic, assign) BOOL logViewerInstalled;
 @end
 
 @implementation SSHPrefsListController
@@ -70,17 +67,11 @@
     [super viewWillAppear:animated];
     [self registerObservers];
     [self requestStatusRefresh];
-    [self updateLogFooter];
 }
 
 - (void)viewWillDisappear:(BOOL)animated {
     [super viewWillDisappear:animated];
     [self unregisterObservers];
-}
-
-- (void)viewDidLayoutSubviews {
-    [super viewDidLayoutSubviews];
-    [self layoutSSHLogFooter];
 }
 
 #pragma mark - Darwin observers
@@ -110,7 +101,6 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
     if (!controller) return;
     dispatch_async(dispatch_get_main_queue(), ^{
         [controller refreshFromStatusPref];
-        [controller refreshLogViewer];
     });
 }
 
@@ -233,199 +223,6 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
 - (void)statusSpecPending:(NSString *)text {
     [self.statusSpec setName:text];
     [self reload];
-}
-
-#pragma mark - SSH 日志视图（读 helmtweak/ssh.log，参考 MCP 面板的悬浮 footer）
-
-- (void)updateLogFooter {
-    UITableView *table = [self valueForKey:@"table"];
-    if (!table) return;
-    if (!self.logFooterView) {
-        [self buildSSHLogFooterWithTable:table];
-    }
-    table.tableFooterView = self.logFooterView;
-    [self layoutSSHLogFooter];
-    [self refreshLogViewer];
-}
-
-// footer 只负责日志文本展示（清空/刷新已改为设置列表里的正常 PSButtonCell 行）。
-- (void)buildSSHLogFooterWithTable:(UITableView *)table {
-    UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, table.bounds.size.width, 180)];
-    footer.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-
-    UILabel *log = [[UILabel alloc] initWithFrame:CGRectZero];
-    log.numberOfLines = 15;
-    log.lineBreakMode = NSLineBreakByTruncatingTail;
-    log.backgroundColor = [UIColor clearColor];
-    log.textColor = [UIColor secondaryLabelColor];
-    log.font = [UIFont systemFontOfSize:11.0];
-    log.text = @"";
-    [footer addSubview:log];
-    self.logTextLabel = log;
-
-    self.logFooterView = footer;
-}
-
-- (void)layoutSSHLogFooter {
-    UITableView *table = [self valueForKey:@"table"];
-    if (!table || !self.logFooterView) return;
-
-    CGFloat width = table.bounds.size.width;
-    CGFloat inset = 16.0;
-    CGFloat footerTop = 8.0;
-    CGFloat logH = 172.0;
-
-    CGRect f = self.logFooterView.frame;
-    f.size.width = width;
-    f.size.height = footerTop + logH;
-    self.logFooterView.frame = f;
-
-    CGFloat textX = inset + 16;
-
-    self.logTextLabel.frame = CGRectMake(textX, footerTop, width - textX - inset, logH);
-
-    table.tableFooterView = self.logFooterView;
-}
-
-// 「刷新日志」cell 点击。
-- (void)refreshLogs:(PSSpecifier *)spec {
-    [self performLogRefresh];
-}
-
-// 「清空日志」cell 点击。
-- (void)clearLogs:(PSSpecifier *)spec {
-    [self clearLogsTapped:nil];
-}
-
-- (void)performLogRefresh {
-    if (self.logViewerInstalled) return;
-    self.logViewerInstalled = YES;
-
-    __weak typeof(self) weakSelf = self;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        __strong typeof(weakSelf) self = weakSelf;
-        if (!self) return;
-        [self refreshLogViewer];
-        self.logViewerInstalled = NO;
-    });
-}
-
-// 读 ssh.log 最近 15 条，倒序（最新在前）写入 textView。
-- (void)refreshLogViewer {
-    if (!(self.isViewLoaded && self.view.window != nil)) return;
-    NSArray<NSString *> *lines = [self lastSSHLogLines:15];
-    if (!lines.count) {
-        self.logTextLabel.text = @"暂无日志";
-        return;
-    }
-
-    NSMutableArray<NSString *> *display = [NSMutableArray array];
-    CGFloat maxWidth = self.logTextLabel.bounds.size.width;
-    for (NSString *line in lines) {
-        NSString *clean = [self logLineWithoutTimestamp:line];
-        if (clean.length) [display addObject:[self truncateSSHLine:clean toWidth:maxWidth]];
-    }
-    if (display.count) {
-        self.logTextLabel.text = [display componentsJoinedByString:@"\n"];
-    } else {
-        self.logTextLabel.text = @"暂无日志";
-    }
-}
-
-- (NSString *)truncateSSHLine:(NSString *)string toWidth:(CGFloat)maxWidth {
-    if (maxWidth <= 0) return string;
-    UIFont *font = self.logTextLabel.font;
-    if ([string sizeWithAttributes:@{NSFontAttributeName: font}].width <= maxWidth) return string;
-    NSMutableString *ms = [string mutableCopy];
-    while (ms.length > 1) {
-        [ms deleteCharactersInRange:NSMakeRange(ms.length - 1, 1)];
-        NSString *cand = [ms stringByAppendingString:@"…"];
-        if ([cand sizeWithAttributes:@{NSFontAttributeName: font}].width <= maxWidth) return cand;
-    }
-    return @"…";
-}
-
-- (NSString *)timestampFromSSHLogLine:(NSString *)line {
-    if (line.length < 19) return nil;
-    NSString *head = [line substringToIndex:19];
-    if ([head characterAtIndex:4] == '-' && [head characterAtIndex:7] == '-') {
-        return head;
-    }
-    return nil;
-}
-
-// 去掉行首时间戳和 pid= 前缀，只留 message。
-- (NSString *)logLineWithoutTimestamp:(NSString *)line {
-    NSRange pidRange = [line rangeOfString:@"pid="];
-    if (pidRange.location != NSNotFound) {
-        NSUInteger msgPos = pidRange.location + pidRange.length;
-        while (msgPos < line.length && [[NSCharacterSet decimalDigitCharacterSet] characterIsMember:[line characterAtIndex:msgPos]]) msgPos++;
-        while (msgPos < line.length && [[NSCharacterSet whitespaceCharacterSet] characterIsMember:[line characterAtIndex:msgPos]]) msgPos++;
-        if (msgPos < line.length) {
-            return [line substringFromIndex:msgPos];
-        }
-    }
-    NSString *ts = [self timestampFromSSHLogLine:line];
-    if (!ts) return line;
-    NSUInteger pos = ts.length;
-    while (pos < line.length && [[NSCharacterSet whitespaceCharacterSet] characterIsMember:[line characterAtIndex:pos]]) pos++;
-    if (pos + 5 <= line.length) {
-        unichar c = [line characterAtIndex:pos];
-        if (c == '+' || c == '-') pos += 6;
-    }
-    while (pos < line.length && [[NSCharacterSet whitespaceCharacterSet] characterIsMember:[line characterAtIndex:pos]]) pos++;
-    return [line substringFromIndex:pos];
-}
-
-- (NSArray<NSString *> *)lastSSHLogLines:(NSUInteger)count {
-    NSArray<NSString *> *paths = @[
-        @"/private/var/mobile/Library/Logs/helmtweak/ssh.log",
-        @"/var/mobile/Library/Logs/helmtweak/ssh.log",
-    ];
-    NSString *content = @"";
-    for (NSString *path in paths) {
-        content = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
-        if (content.length) break;
-    }
-    if (!content.length) return @[];
-    NSArray<NSString *> *all = [content componentsSeparatedByString:@"\n"];
-    NSMutableArray<NSString *> *result = [NSMutableArray array];
-    NSInteger i = all.count - 1;
-    while (i >= 0 && result.count < count) {
-        NSString *line = [all[i] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if (line.length) [result addObject:line];
-        i--;
-    }
-    return result;
-}
-
-- (void)clearLogsTapped:(UIButton *)sender {
-    NSFileManager *fm = [NSFileManager defaultManager];
-    NSArray<NSString *> *paths = @[
-        @"/private/var/mobile/Library/Logs/helmtweak/ssh.log",
-        @"/var/mobile/Library/Logs/helmtweak/ssh.log",
-    ];
-
-    BOOL allCleared = YES;
-    NSString *lastError = nil;
-    for (NSString *path in paths) {
-        NSError *e = nil;
-        if ([fm fileExistsAtPath:path] && ![fm removeItemAtPath:path error:&e]) {
-            allCleared = NO;
-            if (!lastError) lastError = e.localizedDescription;
-        }
-    }
-
-    NSString *message = allCleared ? @"已清空" : [@"清空失败: " stringByAppendingString:lastError ?: @"未知错误"];
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"清空日志"
-                                                                   message:message
-                                                            preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
-    [self presentViewController:alert animated:YES completion:nil];
-    if (self.logTextLabel) {
-        self.logTextLabel.text = @"已清空";
-    }
 }
 
 @end

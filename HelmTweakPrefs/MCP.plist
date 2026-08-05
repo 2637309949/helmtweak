@@ -67,24 +67,14 @@
 			<string>启动日志</string>
 		</dict>
 		<dict>
-			<key>action</key>
-			<string>refreshLogs:</string>
 			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>id</key>
-			<string>mcpRefreshLog</string>
+			<string>PSLinkCell</string>
+			<key>detail</key>
+			<string>MCPLogViewerController</string>
 			<key>label</key>
-			<string>刷新日志</string>
-		</dict>
-		<dict>
-			<key>action</key>
-			<string>clearLogs:</string>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>id</key>
-			<string>mcpClearLog</string>
-			<key>label</key>
-			<string>清空日志</string>
+			<string>查看日志</string>
+			<key>isController</key>
+			<true/>
 		</dict>
 	</array>
 	<key>title</key>

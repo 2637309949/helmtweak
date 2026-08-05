@@ -31,9 +31,6 @@
 @property (nonatomic, assign) CFTimeInterval toggleTimestamp;
 @property (nonatomic, assign) BOOL finalizeScheduled;
 @property (nonatomic, strong) UISwitch *toggleSwitch;
-@property (nonatomic, assign) BOOL logViewerInstalled;
-@property (nonatomic, strong) UILabel *logTextLabel;
-@property (nonatomic, strong) UIView *logFooterView;
 @end
 
 @implementation MCPPrefsListController
@@ -72,24 +69,15 @@
 }
 
 // 用户拨动开关时，Preferences 框架调这里（iOS 15+ action: 不触发，已验证走这条路）。
-// 服务开关 -> 接管启停；启动日志开关 -> 开时立即刷新一次日志显示；其余直接透传。
+// 服务开关 -> 接管启停；启动日志开关 -> 直接透传（日志展示已移到「查看日志」全屏页）。
 - (void)setPreferenceValue:(id)value specifier:(PSSpecifier *)spec {
     NSString *name = [spec name];
     BOOL isToggle = [name isEqualToString:@"服务"];
-    BOOL isLogging = [name isEqualToString:@"启动日志"];
     if (isToggle) {
         [self logPrefs:@"toggle to %@", value];
         [self handleToggleRequest:[value boolValue]];
-    } else if (isLogging) {
-        // 用拨动目标值直接控制容器显示（此时 pref 还没写盘，不能读）。
-        [self showLogFooter:[value boolValue]];
     }
     [super setPreferenceValue:value specifier:spec];
-
-    // 服务/启动日志开关状态变化后自动刷新日志（仅日志开启时有效）。
-    if ((isToggle || isLogging) && [self debugLoggingEnabled]) {
-        [self performLogRefresh];
-    }
 }
 
 - (NSArray *)specifiers {
@@ -103,17 +91,11 @@
     [super viewWillAppear:animated];
     [self registerControlObservers];
     [self refreshServerStatus];
-    [self updateLogFooter];
 }
 
 - (void)viewWillDisappear:(BOOL)animated {
     [super viewWillDisappear:animated];
     [self unregisterControlObservers];
-}
-
-- (void)viewDidLayoutSubviews {
-    [super viewDidLayoutSubviews];
-    [self layoutLogFooter];
 }
 
 #pragma mark - Darwin event observers
@@ -264,198 +246,6 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     return on;
 }
 
-// 日志 footer 只在「启动日志」开关打开时挂到 table 底部。
-- (void)updateLogFooter {
-    [self showLogFooter:[self debugLoggingEnabled]];
-}
-
-- (void)showLogFooter:(BOOL)show {
-    UITableView *table = [self valueForKey:@"table"];
-    if (!table) return;
-    if (show) {
-        if (!self.logFooterView) {
-            [self buildLogFooterWithTable:table];
-        }
-        table.tableFooterView = self.logFooterView;
-        [self layoutLogFooter];
-        [self refreshLogViewer];
-    } else {
-        table.tableFooterView = nil;
-    }
-}
-
-// 构建日志 footer：只创建日志文本控件，frame 统一在 layoutLogFooter 里按当前真实宽度计算。
-// （清空/刷新已改为设置列表里的正常 PSButtonCell 行，footer 只负责日志文本展示。）
-- (void)buildLogFooterWithTable:(UITableView *)table {
-    UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, table.bounds.size.width, 180)];
-    footer.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-
-    UILabel *log = [[UILabel alloc] initWithFrame:CGRectZero];
-    log.numberOfLines = 15;
-    log.lineBreakMode = NSLineBreakByTruncatingTail;
-    log.backgroundColor = [UIColor clearColor];
-    log.textColor = [UIColor secondaryLabelColor];
-    log.font = [UIFont systemFontOfSize:11.0];
-    log.text = @"";
-    [footer addSubview:log];
-    self.logTextLabel = log;
-
-    self.logFooterView = footer;
-}
-
-// footer 固定高度：顶部日志区。所有 frame 在此用当前 table 宽度统一计算。
-- (void)layoutLogFooter {
-    UITableView *table = [self valueForKey:@"table"];
-    if (!table || !self.logFooterView) return;
-
-    CGFloat width = table.bounds.size.width;
-    CGFloat inset = 16.0;
-    CGFloat footerTop = 8.0;       // 距最后一行间距
-    CGFloat logH = 172.0;          // 日志区高度
-
-    CGRect f = self.logFooterView.frame;
-    f.size.width = width;
-    f.size.height = footerTop + logH;
-    self.logFooterView.frame = f;
-
-    // 文本左缘基准：设置项标题在 x=32（16 卡片边距 + 16 文本内边距）。
-    CGFloat textX = inset + 16;          // 与"服务/启动日志"文本左缘一致
-
-    // 顶部日志区：与标题行左对齐
-    self.logTextLabel.frame = CGRectMake(textX, footerTop, width - textX - inset, logH);
-
-    table.tableFooterView = self.logFooterView;
-}
-
-// 「刷新日志」cell 点击：转圈刷新日志。
-- (void)refreshLogs:(PSSpecifier *)spec {
-    [self performLogRefresh];
-}
-
-// 「清空日志」cell 点击。
-- (void)clearLogs:(PSSpecifier *)spec {
-    [self clearLogsTapped:nil];
-}
-
-// 刷新日志：0.3s 后刷新。
-- (void)performLogRefresh {
-    if (self.logViewerInstalled) return;  // 正在刷新
-    self.logViewerInstalled = YES;
-
-    __weak typeof(self) weakSelf = self;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        __strong typeof(weakSelf) self = weakSelf;
-        if (!self) return;
-        [self refreshLogViewer];
-        self.logViewerInstalled = NO;
-    });
-}
-
-// 读 mcp.log 最近 15 条，倒序（最新在前）写入 textView。
-// 仅最新一条保留完整时间戳显示在左上角，其余行去掉时间前缀。
-// 仅在当前看板 + 日志开关开时执行。
-- (void)refreshLogViewer {
-    if (![self debugLoggingEnabled]) return;
-    if (!(self.isViewLoaded && self.view.window != nil)) return;  // 不在当前看板不读
-    NSArray<NSString *> *lines = [self lastLogLines:15];  // 最新在前
-    if (!lines.count) {
-        self.logTextLabel.text = @"暂无日志";
-        return;
-    }
-
-    // 每行都去掉时间戳+pid，只留 message。
-    // 单行超宽截断加省略号，不换行。
-    NSMutableArray<NSString *> *display = [NSMutableArray array];
-    CGFloat maxWidth = self.logTextLabel.bounds.size.width;
-    for (NSString *line in lines) {
-        NSString *clean = [self logLineWithoutTimestamp:line];
-        if (clean.length) [display addObject:[self truncateString:clean toWidth:maxWidth]];
-    }
-    if (display.count) {
-        self.logTextLabel.text = [display componentsJoinedByString:@"\n"];
-    } else {
-        self.logTextLabel.text = @"暂无日志";
-    }
-}
-
-// 单行日志超宽截断：末尾加省略号，不换行。maxWidth<=0 时原样返回。
-- (NSString *)truncateString:(NSString *)string toWidth:(CGFloat)maxWidth {
-    if (maxWidth <= 0) return string;
-    UIFont *font = self.logTextLabel.font;
-    if ([string sizeWithAttributes:@{NSFontAttributeName: font}].width <= maxWidth) return string;
-    NSMutableString *ms = [string mutableCopy];
-    while (ms.length > 1) {
-        [ms deleteCharactersInRange:NSMakeRange(ms.length - 1, 1)];
-        NSString *cand = [ms stringByAppendingString:@"…"];
-        if ([cand sizeWithAttributes:@{NSFontAttributeName: font}].width <= maxWidth) return cand;
-    }
-    return @"…";
-}
-
-// 从日志行头部提取时间戳，如 "2026-08-02 13:42:00 +0000"。
-- (NSString *)timestampFromLogLine:(NSString *)line {
-    // MCPLogger 格式: "%Y-%m-%d %H:%M:%S%z pid=... " —— 前 19 字符是时间，随后是 +0800 时区
-    if (line.length < 19) return nil;
-    NSString *head = [line substringToIndex:19];
-    // 简单校验是数字-数字格式
-    if ([head characterAtIndex:4] == '-' && [head characterAtIndex:7] == '-') {
-        return head;
-    }
-    return nil;
-}
-
-// 去掉行首时间戳和 pid= 前缀，只留 message。日志格式: "YYYY-MM-DD HH:MM:SS.mmm+0800 pid=36211 message"
-- (NSString *)logLineWithoutTimestamp:(NSString *)line {
-    // 找 pid= 位置
-    NSRange pidRange = [line rangeOfString:@"pid="];
-    if (pidRange.location != NSNotFound) {
-        NSUInteger msgPos = pidRange.location + pidRange.length;
-        // 跳过 pid 数字
-        while (msgPos < line.length && [[NSCharacterSet decimalDigitCharacterSet] characterIsMember:[line characterAtIndex:msgPos]]) msgPos++;
-        // 跳过空格
-        while (msgPos < line.length && [[NSCharacterSet whitespaceCharacterSet] characterIsMember:[line characterAtIndex:msgPos]]) msgPos++;
-        if (msgPos < line.length) {
-            return [line substringFromIndex:msgPos];
-        }
-    }
-    // 没有 pid=（异常行），退回只去时间戳
-    NSString *ts = [self timestampFromLogLine:line];
-    if (!ts) return line;
-    NSUInteger pos = ts.length;
-    while (pos < line.length && [[NSCharacterSet whitespaceCharacterSet] characterIsMember:[line characterAtIndex:pos]]) pos++;
-    if (pos + 5 <= line.length) {
-        unichar c = [line characterAtIndex:pos];
-        if (c == '+' || c == '-') pos += 6;
-    }
-    while (pos < line.length && [[NSCharacterSet whitespaceCharacterSet] characterIsMember:[line characterAtIndex:pos]]) pos++;
-    return [line substringFromIndex:pos];
-}
-
-- (NSArray<NSString *> *)lastLogLines:(NSUInteger)count {
-    // rootless 下真实路径是 /private/var/...，/var 是符号链接可能解析失败，两个都试。
-    NSArray<NSString *> *paths = @[
-        @"/private/var/mobile/Library/Logs/helmtweak/mcp.log",
-        @"/var/mobile/Library/Logs/helmtweak/mcp.log",
-    ];
-    NSString *content = @"";
-    for (NSString *path in paths) {
-        content = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
-        if (content.length) break;
-    }
-    if (!content.length) return @[];
-    NSArray<NSString *> *all = [content componentsSeparatedByString:@"\n"];
-    // 从后往前取，最新在最前
-    NSMutableArray<NSString *> *result = [NSMutableArray array];
-    NSInteger i = all.count - 1;
-    while (i >= 0 && result.count < count) {
-        NSString *line = [all[i] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if (line.length) [result addObject:line];
-        i--;
-    }
-    return result;
-}
-
 - (void)refreshServerStatus {
     // 进面板：读 serverStatus。
     //   中间态（starting/stopping）-> 发 CHECK 等 MCP 回执（事件驱动兜底）
@@ -523,39 +313,5 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
     [self scheduleStatusTimeout];
 }
 
-- (void)clearLogsTapped:(UIButton *)sender {
-    // 清日志文件（不依赖 MCPLogger 类，Settings 进程没有它）。
-    // 清 helmtweak + HelmCore 两个日志目录。
-    NSFileManager *fm = [NSFileManager defaultManager];
-    NSArray<NSString *> *dirs = @[
-        @"/var/mobile/Library/Logs/helmtweak",
-        @"/var/mobile/Library/Logs/HelmCore",
-    ];
-
-    BOOL allCleared = YES;
-    NSString *lastError = nil;
-    for (NSString *dir in dirs) {
-        NSArray<NSString *> *files = [fm contentsOfDirectoryAtPath:dir error:nil];
-        for (NSString *file in files) {
-            if (![file hasSuffix:@".log"]) continue;
-            NSError *e = nil;
-            if (![fm removeItemAtPath:[dir stringByAppendingPathComponent:file] error:&e]) {
-                allCleared = NO;
-                if (!lastError) lastError = e.localizedDescription;
-            }
-        }
-    }
-
-    NSString *message = allCleared ? @"已清空" : [@"清空失败: " stringByAppendingString:lastError ?: @"未知错误"];
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"清空日志"
-                                                                   message:message
-                                                            preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
-    [self presentViewController:alert animated:YES completion:nil];
-    // 清空后显示"已清空"，不自动重读（server 还在写，重读会有新日志）。
-    if (self.logTextLabel) {
-        self.logTextLabel.text = @"已清空";
-    }
-}
 
 @end
