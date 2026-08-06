@@ -288,17 +288,7 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
 
 #pragma mark - Actions
 
-// PSSwitchCell 拨动 -> 写 sshAutostart pref 后发 autostart 事件让 MCP 落地。
 - (void)setPreferenceValue:(id)value specifier:(PSSpecifier *)spec {
-    BOOL isAutostart = [[spec name] isEqualToString:@"开机自启"];
-    if (isAutostart) {
-        [self logPrefs:@"autostart switch -> %@", value];
-        // 先落盘再发事件（super 会写盘，这里确保 MCP 侧能读到最新值）
-        [super setPreferenceValue:value specifier:spec];
-        CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
-        [self postEvent:IOS_MCP_DARWIN_NOTIFICATION_SSH_AUTOSTART];
-        return;
-    }
     [super setPreferenceValue:value specifier:spec];
 }
 
