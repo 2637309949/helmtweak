@@ -14,6 +14,7 @@
 #import <UIKit/UIKit.h>
 #import <CoreFoundation/CoreFoundation.h>
 #import "IOSMCPPreferences.h"
+#import "HelmLogViewerController.h"
 
 @interface PSListController (HelmTweakPrivate)
 - (NSMutableArray *)loadSpecifiersFromPlistName:(NSString *)name target:(id)target;
@@ -311,6 +312,12 @@ static void MCPServerControlCallback(CFNotificationCenterRef center,
 
     [self setButtonLoading:YES];
     [self scheduleStatusTimeout];
+}
+
+// 「查看日志」PSButtonCell action：手动推入 MCP 日志查看器。
+- (void)showMCPLog:(PSSpecifier *)spec {
+    MCPLogViewerController *vc = [[MCPLogViewerController alloc] init];
+    [self.navigationController pushViewController:vc animated:YES];
 }
 
 

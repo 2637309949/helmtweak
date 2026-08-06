@@ -1,6 +1,7 @@
 // HelmLogViewerController — 全屏日志查看器
 //
-// 独立于 PreferenceBundle 的普通 UIViewController，由面板「查看日志」PSLinkCell 推入。
+// 独立于 PreferenceBundle 的普通 UIViewController，由面板「查看日志」PSButtonCell 的
+// action 推入（见 MCPPrefsListController/SSHPrefsListController 的 showMCPLog:/showSSHLog:）。
 // 页面主体是可滚动 UITextView（Menlo 等宽字体），最新日志在最上，可选中复制。
 // 导航栏右侧「刷新」「清空」按钮。进页面自动加载。
 //
@@ -8,15 +9,7 @@
 
 #import <UIKit/UIKit.h>
 #import <CoreFoundation/CoreFoundation.h>
-
-@interface HelmLogViewerController : UIViewController
-// 要读取的日志文件路径列表（按序尝试，取第一个存在的）。子类覆写。
-- (NSArray<NSString *> *)logFilePaths;
-// 清空时要删的文件列表。默认等于 logFilePaths。子类可覆写加目录扫描。
-- (NSArray<NSString *> *)clearFilePaths;
-// 读取的最大行数（最新 N 行），防止日志文件过大。
-- (NSUInteger)maxLines;
-@end
+#import "HelmLogViewerController.h"
 
 @implementation HelmLogViewerController {
     UITextView *_textView;
@@ -138,9 +131,6 @@
 
 // ===== MCP 日志查看器 =====
 
-@interface MCPLogViewerController : HelmLogViewerController
-@end
-
 @implementation MCPLogViewerController
 
 - (instancetype)init {
@@ -174,9 +164,6 @@
 @end
 
 // ===== SSH 日志查看器 =====
-
-@interface SSHLogViewerController : HelmLogViewerController
-@end
 
 @implementation SSHLogViewerController
 

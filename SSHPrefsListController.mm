@@ -12,6 +12,7 @@
 #import <UIKit/UIKit.h>
 #import <CoreFoundation/CoreFoundation.h>
 #import "IOSMCPPreferences.h"
+#import "HelmLogViewerController.h"
 
 @interface PSListController (HelmSSHPrivate)
 - (NSMutableArray *)loadSpecifiersFromPlistName:(NSString *)name target:(id)target;
@@ -223,6 +224,12 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
 - (void)statusSpecPending:(NSString *)text {
     [self.statusSpec setName:text];
     [self reload];
+}
+
+// 「查看日志」PSButtonCell action：手动推入 SSH 日志查看器。
+- (void)showSSHLog:(PSSpecifier *)spec {
+    SSHLogViewerController *vc = [[SSHLogViewerController alloc] init];
+    [self.navigationController pushViewController:vc animated:YES];
 }
 
 @end

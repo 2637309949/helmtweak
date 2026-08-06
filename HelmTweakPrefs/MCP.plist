@@ -67,14 +67,12 @@
 			<string>启动日志</string>
 		</dict>
 		<dict>
+			<key>action</key>
+			<string>showMCPLog:</string>
 			<key>cell</key>
-			<string>PSLinkCell</string>
-			<key>detail</key>
-			<string>MCPLogViewerController</string>
+			<string>PSButtonCell</string>
 			<key>label</key>
 			<string>查看日志</string>
-			<key>isController</key>
-			<true/>
 		</dict>
 	</array>
 	<key>title</key>
