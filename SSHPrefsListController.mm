@@ -198,10 +198,10 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
     [self setSwitchVisible:YES];
     self.toggleSwitch.on = self.serverRunning;
 
-    // 操作失败提示：文字标注 + 日志见查看日志页。
+    // 操作失败不覆盖开关文字（reload 会重建 cell 把 UISwitch 挤掉，就是这个闪退/消失的坑）。
+    // 失败原因已在 ssh 日志里，用户点「查看日志」查看。这里只留一行痕迹日志。
     if (lastError.length && !self.serverRunning) {
-        [self.toggleSpec setName:lastError];
-        [self reload];
+        [self logPrefs:@"op failed, see ssh log: %@", lastError];
     }
 
     [self logPrefs:@"state installed=%d running=%d", self.serverInstalled ? 1 : 0, self.serverRunning ? 1 : 0];

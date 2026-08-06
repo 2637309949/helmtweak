@@ -152,20 +152,22 @@ static void ios_mcp_handle_ssh_control(CFStringRef name) {
         result = [ssh setAutostart:autostart error:&error];
     } else {
         result = nil;
-        error = @"unknown ssh control event";
+        error = @"未知 SSH 控制事件";
     }
 
     if (result == nil && error.length == 0) {
-        error = @"unknown failure";
+        error = @"未知错误";
     }
 
-    // 记录结果供 Settings 侧诊断展示。
-    NSString *lastResult = result[@"message"] ?: error ?: @"-";
-    CFPreferencesSetAppValue(CFSTR("sshLastResult"),
-                             (__bridge CFStringRef)lastResult,
+    // 关键：只把真实失败记进 sshLastError。成功操作（如 "sshd stopped"）是正常结果，
+    // 不应被 Settings 面板当作失败提示显示在开关上。
+    BOOL failed = (result == nil);
+    CFPreferencesSetAppValue(CFSTR("sshLastError"),
+                             (__bridge CFStringRef)(failed ? (error ?: @"操作失败") : @""),
                              CFSTR("com.witchan.ios-mcp.preferences"));
+    CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
 
-    IOS_MCP_LOG(@"SSH control result=%@", lastResult);
+    IOS_MCP_LOG(@"SSH control ok=%d result=%@", failed ? 0 : 1, failed ? error : [result[@"message"] description]);
 }
 
 static void ios_mcp_handle_control_notification(CFNotificationCenterRef center,
@@ -257,14 +259,17 @@ static void ios_mcp_handle_control_notification(CFNotificationCenterRef center,
                                                     NULL, NULL, true);
             }
 
-            NSString *lastResult = nil;
+            NSString *lastError = nil;
             if (![sshEvent isEqualToString:(__bridge NSString *)IOS_MCP_DARWIN_NOTIFICATION_SSH_STATUS]) {
                 ios_mcp_handle_ssh_control((__bridge CFStringRef)sshEvent);
                 CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
-                CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("sshLastResult"),
+                CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("sshLastError"),
                                                                  CFSTR("com.witchan.ios-mcp.preferences"));
                 if (v && CFGetTypeID(v) == CFStringGetTypeID()) {
-                    lastResult = (__bridge NSString *)v;
+                    NSString *val = (__bridge NSString *)v;
+                    if (val.length) {
+                        lastError = val;
+                    }
                 }
                 if (v) CFRelease(v);
             }
@@ -275,8 +280,8 @@ static void ios_mcp_handle_control_notification(CFNotificationCenterRef center,
             NSString *statusError = nil;
             NSDictionary *status = [ssh getStatus:&statusError];
             NSMutableDictionary *merged = [NSMutableDictionary dictionaryWithDictionary:status ?: @{}];
-            if (lastResult.length) {
-                merged[@"last_error"] = lastResult;
+            if (lastError.length) {
+                merged[@"last_error"] = lastError;
             }
             ios_mcp_write_ssh_status_preference(merged, preserveIntermediate);
         });
