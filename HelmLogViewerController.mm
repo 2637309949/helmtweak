@@ -14,6 +14,8 @@
 @implementation HelmLogViewerController {
     UITextView *_textView;
     BOOL _loading;
+    UINavigationBarAppearance *_savedStandardAppearance;
+    UINavigationBarAppearance *_savedScrollEdgeAppearance;
 }
 
 - (NSUInteger)maxLines {
@@ -31,8 +33,9 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
-    self.edgesForExtendedLayout = UIRectEdgeNone;
-
+    // 不要用 UIRectEdgeNone：Settings 导航栏是半透明毛玻璃，其他页面内容延伸到导航栏下
+    // 露出分组背景。这里保持默认（内容延伸到边缘），由 scroll view 自动 inset 处理。
+    self.edgesForExtendedLayout = UIRectEdgeAll;
     _textView = [[UITextView alloc] initWithFrame:self.view.bounds];
     _textView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     _textView.editable = NO;
@@ -63,6 +66,31 @@
     if (_textView && _textView.text.length == 0) {
         [self reloadLogs];
     }
+}
+
+// Settings 导航栏是半透明 + 露分组背景；普通 UIViewController 推入时导航栏会落到
+// 默认深灰 appearance。这里进入时把导航栏设成透明（透出下面的 systemGroupedBackgroundColor），
+// 离开时恢复原 appearance，避免影响返回的 Settings 页面。
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    UINavigationBar *bar = self.navigationController.navigationBar;
+    if (!bar) return;
+    _savedStandardAppearance = bar.standardAppearance;
+    _savedScrollEdgeAppearance = bar.scrollEdgeAppearance;
+    UINavigationBarAppearance *app = [[UINavigationBarAppearance alloc] init];
+    [app configureWithTransparentBackground];
+    [app setBackgroundColor:[UIColor clearColor]];
+    bar.standardAppearance = app;
+    bar.scrollEdgeAppearance = app;
+}
+
+- (void)viewWillDisappear:(BOOL)animated {
+    UINavigationBar *bar = self.navigationController.navigationBar;
+    if (bar) {
+        bar.standardAppearance = _savedStandardAppearance;
+        bar.scrollEdgeAppearance = _savedScrollEdgeAppearance;
+    }
+    [super viewWillDisappear:animated];
 }
 
 - (void)refreshTapped:(id)sender {
