@@ -12,23 +12,13 @@
 		</dict>
 		<dict>
 			<key>action</key>
-			<string>refreshSSHStatus:</string>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>id</key>
-			<string>sshStatusCell</string>
-			<key>label</key>
-			<string>加载中</string>
-		</dict>
-		<dict>
-			<key>action</key>
-			<string>toggleSSH:</string>
+			<string>toggleRowTapped:</string>
 			<key>cell</key>
 			<string>PSButtonCell</string>
 			<key>id</key>
 			<string>sshToggleCell</string>
 			<key>label</key>
-			<string>启动 SSH</string>
+			<string>SSH 服务</string>
 		</dict>
 		<dict>
 			<key>cell</key>

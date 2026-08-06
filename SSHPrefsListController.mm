@@ -1,9 +1,18 @@
 // SSHPrefsListController — SSH 工具子面板
 //
-// 状态来源：MCP server（SpringBoard 内 SSHManager）把最新状态写成 JSON pref `sshStatus`，
-// 再广播 `ssh-status-updated`。本面板：
-//   - 进面板/收到更新 -> 读 sshStatus -> 更新「状态」按钮文字 + 「启动/停止」按钮文字
-//   - 点按钮 -> 发 darwin 事件（start/stop/install/autostart）给 MCP，MCP 执行后回写状态
+// 主控制：单个 cell（sshToggleCell），按 SSH 状态机动态呈现（与 MCP 面板的「服务」开关对齐）：
+//   - uninstalled  -> 一行文字「开始安装」，点击即安装（隐藏开关）
+//   - installing   -> 「安装中」+ 转圈
+//   - installed    -> 开关 off（显示 UISwitch）
+//   - starting     -> 「启动中」+ 转圈
+//   - running      -> 开关 on
+//   - stopping     -> 「停止中」+ 转圈
+//   - 安装/操作失败 -> 文字「安装失败」+ 日志见「查看日志」页
+//
+// 状态来源：SpringBoard 内 SSHManager 把最新状态写成 JSON pref `sshStatus` + 状态机
+// `sshServerStatus`，再广播 `ssh-status-updated`。本面板：
+//   - 进面板/收到更新 -> 读这两个 pref -> 更新 cell 呈现
+//   - 点击「开始安装」/ 拨动开关 -> 发 darwin 事件（install/start/stop）给 MCP
 //   - 开机自启 PSSwitchCell 绑定 sshAutostart pref，setPreferenceValue: 拦截后发 autostart 事件
 //
 // 与 MCP 面板同样的硬约束：不动态构造 PSSpecifier；只 [spec setName:]+[self reload] 改文字。
@@ -25,9 +34,12 @@
 
 @interface SSHPrefsListController : PSListController
 @property (nonatomic, strong) NSDictionary *sshStatus;
-@property (nonatomic, strong) PSSpecifier *statusSpec;
 @property (nonatomic, strong) PSSpecifier *toggleSpec;
+@property (nonatomic, strong) UISwitch *toggleSwitch;
 @property (nonatomic, assign) BOOL busy;
+@property (nonatomic, assign) BOOL serverInstalled;
+@property (nonatomic, assign) BOOL serverRunning;
+@property (nonatomic, copy) NSString *serverStatus;
 @end
 
 @implementation SSHPrefsListController
@@ -54,9 +66,7 @@
     if (!_specifiers) {
         _specifiers = [self loadSpecifiersFromPlistName:@"SSH" target:self];
         for (PSSpecifier *spec in _specifiers) {
-            if ([[spec name] isEqualToString:@"加载中"]) {
-                self.statusSpec = spec;
-            } else if ([[spec name] isEqualToString:@"启动 SSH"]) {
+            if ([[spec name] isEqualToString:@"SSH 服务"]) {
                 self.toggleSpec = spec;
             }
         }
@@ -113,7 +123,19 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
                                         NULL, NULL, true);
 }
 
-// 读 sshStatus JSON pref 更新按钮文字。
+- (NSString *)prefString:(NSString *)key {
+    CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
+    CFPropertyListRef v = CFPreferencesCopyAppValue((__bridge CFStringRef)key,
+                                                     CFSTR("com.witchan.ios-mcp.preferences"));
+    NSString *value = nil;
+    if (v && CFGetTypeID(v) == CFStringGetTypeID()) {
+        value = [(__bridge NSString *)v copy];
+    }
+    if (v) CFRelease(v);
+    return value ?: @"";
+}
+
+// 读 sshStatus JSON + sshServerStatus 状态机，更新主 cell 呈现。
 - (void)refreshFromStatusPref {
     CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
     CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("sshStatus"),
@@ -134,76 +156,141 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
     }
     self.sshStatus = status ?: @{};
 
-    BOOL installed = [self.sshStatus[@"server_installed"] boolValue];
-    BOOL running = [self.sshStatus[@"running"] boolValue];
-    BOOL autostart = [self.sshStatus[@"autostart"] boolValue];
+    self.serverInstalled = [self.sshStatus[@"server_installed"] boolValue];
+    self.serverRunning = [self.sshStatus[@"running"] boolValue];
+    self.serverStatus = [self prefString:@"sshServerStatus"];
     BOOL rootAvail = [self.sshStatus[@"root_available"] boolValue];
-    NSString *scheme = self.sshStatus[@"scheme"] ?: @"?";
+    NSString *lastError = self.sshStatus[@"last_error"];
 
-    NSString *statusText;
-    if (!installed) {
-        statusText = @"未安装 openssh-server";
-    } else if (running) {
-        statusText = @"运行中";
-    } else {
-        statusText = @"已安装，未运行";
+    [self logPrefs:@"refresh installed=%d running=%d status=%@ root=%d",
+            self.serverInstalled ? 1 : 0, self.serverRunning ? 1 : 0,
+            self.serverStatus, rootAvail ? 1 : 0];
+
+    // 中间态：转圈 + 文字，busy 锁定，不可操作。
+    if ([self.serverStatus isEqualToString:@"installing"] ||
+        [self.serverStatus isEqualToString:@"starting"] ||
+        [self.serverStatus isEqualToString:@"stopping"]) {
+        self.busy = YES;
+        NSString *label = [self.serverStatus isEqualToString:@"installing"] ? @"安装中"
+                          : [self.serverStatus isEqualToString:@"starting"] ? @"启动中"
+                          : @"停止中";
+        [self.toggleSpec setName:label];
+        [self reload];
+        [self applyAccessorySpinner:YES];
+        [self scheduleStatusTimeout];
+        return;
     }
 
-    NSString *toggleText;
-    if (!installed) {
-        toggleText = @"安装 OpenSSH";
-    } else if (running) {
-        toggleText = @"停止 SSH";
-    } else {
-        toggleText = @"启动 SSH";
-    }
-    if (!rootAvail) {
-        toggleText = [NSString stringWithFormat:@"%@（无 root）", toggleText];
+    self.busy = NO;
+    [self applyAccessorySpinner:NO];
+
+    if (!self.serverInstalled) {
+        // 未安装：文字按钮「开始安装」，隐藏开关。
+        [self.toggleSpec setName:@"开始安装"];
+        [self reload];
+        [self setSwitchVisible:NO];
+        return;
     }
 
-    [self.statusSpec setName:statusText];
-    [self.toggleSpec setName:toggleText];
+    // 已安装：显示开关，on=running。
+    [self.toggleSpec setName:@"SSH 服务"];
     [self reload];
+    [self setSwitchVisible:YES];
+    self.toggleSwitch.on = self.serverRunning;
 
-    [self logPrefs:@"refresh status installed=%d running=%d autostart=%d root=%d scheme=%@",
-            installed ? 1 : 0, running ? 1 : 0, autostart ? 1 : 0, rootAvail ? 1 : 0, scheme];
+    // 操作失败提示：文字标注 + 日志见查看日志页。
+    if (lastError.length && ![self.serverRunning boolValue]) {
+        [self.toggleSpec setName:lastError];
+        [self reload];
+    }
+
+    [self logPrefs:@"state installed=%d running=%d", self.serverInstalled ? 1 : 0, self.serverRunning ? 1 : 0];
+}
+
+// 开关位置转圈：中间态时把 toggle cell 的 accessory 换成 spinner。
+- (void)applyAccessorySpinner:(BOOL)loading {
+    UITableView *table = [self valueForKey:@"table"];
+    if (!table) return;
+    for (UITableViewCell *cell in [table visibleCells]) {
+        if (![cell.textLabel.text isEqualToString:[self.toggleSpec name]] &&
+            ![cell.textLabel.text isEqualToString:@"安装中"] &&
+            ![cell.textLabel.text isEqualToString:@"启动中"] &&
+            ![cell.textLabel.text isEqualToString:@"停止中"]) {
+            continue;
+        }
+        if (loading) {
+            UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+            [spinner startAnimating];
+            cell.accessoryView = spinner;
+        }
+    }
+}
+
+// 显示/隐藏开关：仅安装在非中间态时显示 UISwitch。
+- (void)setSwitchVisible:(BOOL)visible {
+    UITableView *table = [self valueForKey:@"table"];
+    if (!table) return;
+    for (UITableViewCell *cell in [table visibleCells]) {
+        if (![cell.textLabel.text isEqualToString:@"SSH 服务"]) {
+            continue;
+        }
+        if (visible) {
+            if (self.toggleSwitch) {
+                cell.accessoryView = self.toggleSwitch;
+                self.toggleSwitch.on = self.serverRunning;
+            } else {
+                UISwitch *sw = [[UISwitch alloc] init];
+                self.toggleSwitch = sw;
+                sw.on = self.serverRunning;
+                [sw addTarget:self action:@selector(sshSwitchChanged:) forControlEvents:UIControlEventValueChanged];
+                cell.accessoryView = sw;
+            }
+        } else {
+            cell.accessoryView = nil;
+        }
+    }
+}
+
+// 已安装时拨动开关 -> 发 start/stop 事件。
+- (void)sshSwitchChanged:(UISwitch *)sender {
+    if (self.busy) return;
+    [self postEvent:sender.isOn ? IOS_MCP_DARWIN_NOTIFICATION_SSH_START
+                                : IOS_MCP_DARWIN_NOTIFICATION_SSH_STOP];
+    [self logPrefs:@"toggle switch -> %@", sender.isOn ? @"start" : @"stop"];
+}
+
+// 3s 兜底定时器：等待事件回执期间超时后，主动请求最新状态。
+- (void)scheduleStatusTimeout {
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        __strong typeof(weakSelf) self = weakSelf;
+        if (!self) return;
+        if (self.busy) {
+            [self requestStatusRefresh];
+        }
+    });
+}
+
+- (void)postEvent:(CFStringRef)event {
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                        event, NULL, NULL, true);
+}
+
+// 未安装时点击「开始安装」行 -> 发 install 事件。
+// 主 cell 点击（PSButtonCell action）：未安装 -> 触发安装；已安装 -> 开关自己处理拨动。
+- (void)toggleRowTapped:(PSSpecifier *)spec {
+    if (self.busy) return;
+    if (!self.serverInstalled) {
+        self.busy = YES;
+        [self postEvent:IOS_MCP_DARWIN_NOTIFICATION_SSH_INSTALL];
+        [self.toggleSpec setName:@"安装中"];
+        [self reload];
+        [self logPrefs:@"post install"];
+    }
 }
 
 #pragma mark - Actions
-
-- (void)refreshSSHStatus:(PSSpecifier *)spec {
-    [self requestStatusRefresh];
-}
-
-- (void)toggleSSH:(PSSpecifier *)spec {
-    if (self.busy) return;
-    self.busy = YES;
-
-    BOOL installed = [self.sshStatus[@"server_installed"] boolValue];
-    BOOL running = [self.sshStatus[@"running"] boolValue];
-
-    CFStringRef event = nil;
-    if (!installed) {
-        event = IOS_MCP_DARWIN_NOTIFICATION_SSH_INSTALL;
-    } else if (running) {
-        event = IOS_MCP_DARWIN_NOTIFICATION_SSH_STOP;
-    } else {
-        event = IOS_MCP_DARWIN_NOTIFICATION_SSH_START;
-    }
-
-    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-                                        event, NULL, NULL, true);
-    [self logPrefs:@"post event %@", event];
-    [self statusSpecPending:@"执行中…"];
-
-    // MCP 执行后回写 sshStatus + 广播 updated，这里延迟读一次兜底（apt-get 可能较慢）。
-    __weak typeof(self) weakSelf = self;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        [weakSelf refreshFromStatusPref];
-        weakSelf.busy = NO;
-    });
-}
 
 // PSSwitchCell 拨动 -> 写 sshAutostart pref 后发 autostart 事件让 MCP 落地。
 - (void)setPreferenceValue:(id)value specifier:(PSSpecifier *)spec {
@@ -213,16 +300,14 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
         // 先落盘再发事件（super 会写盘，这里确保 MCP 侧能读到最新值）
         [super setPreferenceValue:value specifier:spec];
         CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
-        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-                                            IOS_MCP_DARWIN_NOTIFICATION_SSH_AUTOSTART,
-                                            NULL, NULL, true);
+        [self postEvent:IOS_MCP_DARWIN_NOTIFICATION_SSH_AUTOSTART];
         return;
     }
     [super setPreferenceValue:value specifier:spec];
 }
 
 - (void)statusSpecPending:(NSString *)text {
-    [self.statusSpec setName:text];
+    [self.toggleSpec setName:text];
     [self reload];
 }
 

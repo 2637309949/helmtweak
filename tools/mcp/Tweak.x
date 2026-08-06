@@ -61,7 +61,7 @@ static void ios_mcp_stop_server(void) {
     [[MCPServer sharedInstance] stop];
 }
 
-static void ios_mcp_write_ssh_status_preference(NSDictionary *status) {
+static void ios_mcp_write_ssh_status_preference(NSDictionary *status, BOOL preserveIntermediate) {
     NSData *jsonData = nil;
     if ([NSJSONSerialization isValidJSONObject:status]) {
         jsonData = [NSJSONSerialization dataWithJSONObject:status options:0 error:nil];
@@ -85,10 +85,45 @@ static void ios_mcp_write_ssh_status_preference(NSDictionary *status) {
                                  CFSTR("com.witchan.ios-mcp.preferences"));
     }
 
+    // SSH 稳定态状态机：uninstalled / installed / running（中间态 installing/starting/stopping
+    // 由操作发起时单独写入）。Settings 面板据此决定按钮/开关呈现。
+    // 纯状态刷新（preserveIntermediate=YES）时若正处于中间态（操作进行中），保留中间态不覆盖。
+    if (preserveIntermediate) {
+        NSString *current = ios_mcp_read_ssh_server_status();
+        if ([current isEqualToString:@"installing"] ||
+            [current isEqualToString:@"starting"] ||
+            [current isEqualToString:@"stopping"]) {
+            CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
+            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                                IOS_MCP_DARWIN_NOTIFICATION_SSH_STATUS_UPDATED,
+                                                NULL, NULL, true);
+            return;
+        }
+    }
+    NSString *sshState = @"uninstalled";
+    if ([status[@"server_installed"] boolValue]) {
+        sshState = [status[@"running"] boolValue] ? @"running" : @"installed";
+    }
+    CFPreferencesSetAppValue(CFSTR("sshServerStatus"),
+                             (__bridge CFStringRef)sshState,
+                             CFSTR("com.witchan.ios-mcp.preferences"));
+
     CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
                                         IOS_MCP_DARWIN_NOTIFICATION_SSH_STATUS_UPDATED,
                                         NULL, NULL, true);
+}
+
+static NSString *ios_mcp_read_ssh_server_status(void) {
+    CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
+    CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("sshServerStatus"),
+                                                     CFSTR("com.witchan.ios-mcp.preferences"));
+    NSString *state = nil;
+    if (v && CFGetTypeID(v) == CFStringGetTypeID()) {
+        state = [(__bridge NSString *)v copy];
+    }
+    if (v) CFRelease(v);
+    return state ?: @"";
 }
 
 static void ios_mcp_handle_ssh_control(CFStringRef name) {
@@ -201,6 +236,25 @@ static void ios_mcp_handle_control_notification(CFNotificationCenterRef center,
         // SSH 操作（尤其 apt-get install）可能耗时数十秒，后台执行避免卡住 SpringBoard 主线程。
         NSString *sshEvent = [(__bridge NSString *)name copy];
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            // 中间态：操作发起时先写 installing/starting/stopping，让 Settings 立即转圈。
+            NSString *intermediate = nil;
+            if ([sshEvent isEqualToString:(__bridge NSString *)IOS_MCP_DARWIN_NOTIFICATION_SSH_INSTALL]) {
+                intermediate = @"installing";
+            } else if ([sshEvent isEqualToString:(__bridge NSString *)IOS_MCP_DARWIN_NOTIFICATION_SSH_START]) {
+                intermediate = @"starting";
+            } else if ([sshEvent isEqualToString:(__bridge NSString *)IOS_MCP_DARWIN_NOTIFICATION_SSH_STOP]) {
+                intermediate = @"stopping";
+            }
+            if (intermediate.length) {
+                CFPreferencesSetAppValue(CFSTR("sshServerStatus"),
+                                         (__bridge CFStringRef)intermediate,
+                                         CFSTR("com.witchan.ios-mcp.preferences"));
+                CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
+                CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                                    IOS_MCP_DARWIN_NOTIFICATION_SSH_STATUS_UPDATED,
+                                                    NULL, NULL, true);
+            }
+
             NSString *lastResult = nil;
             if (![sshEvent isEqualToString:(__bridge NSString *)IOS_MCP_DARWIN_NOTIFICATION_SSH_STATUS]) {
                 ios_mcp_handle_ssh_control((__bridge CFStringRef)sshEvent);
@@ -212,7 +266,9 @@ static void ios_mcp_handle_control_notification(CFNotificationCenterRef center,
                 }
                 if (v) CFRelease(v);
             }
-            // 纯状态刷新请求或操作完成后都写一份最新 status 回执给 Settings。
+            // 纯状态刷新请求（无操作）或操作完成后写一份最新 status 回执给 Settings。
+            // 只有纯状态刷新且当前处于中间态时保留中间态；操作完成的都覆盖为稳定态。
+            BOOL preserveIntermediate = [sshEvent isEqualToString:(__bridge NSString *)IOS_MCP_DARWIN_NOTIFICATION_SSH_STATUS];
             SSHManager *ssh = [SSHManager sharedInstance];
             NSString *statusError = nil;
             NSDictionary *status = [ssh getStatus:&statusError];
@@ -220,7 +276,7 @@ static void ios_mcp_handle_control_notification(CFNotificationCenterRef center,
             if (lastResult.length) {
                 merged[@"last_error"] = lastResult;
             }
-            ios_mcp_write_ssh_status_preference(merged);
+            ios_mcp_write_ssh_status_preference(merged, preserveIntermediate);
         });
         return;
     }
