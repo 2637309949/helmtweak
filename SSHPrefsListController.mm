@@ -199,7 +199,7 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
     self.toggleSwitch.on = self.serverRunning;
 
     // 操作失败提示：文字标注 + 日志见查看日志页。
-    if (lastError.length && ![self.serverRunning boolValue]) {
+    if (lastError.length && !self.serverRunning) {
         [self.toggleSpec setName:lastError];
         [self reload];
     }
