@@ -36,6 +36,7 @@
 @property (nonatomic, strong) NSDictionary *sshStatus;
 @property (nonatomic, strong) PSSpecifier *toggleSpec;
 @property (nonatomic, strong) UISwitch *toggleSwitch;
+@property (nonatomic, weak) UITableViewCell *toggleCell;
 @property (nonatomic, assign) BOOL busy;
 @property (nonatomic, assign) BOOL serverInstalled;
 @property (nonatomic, assign) BOOL serverRunning;
@@ -136,6 +137,8 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
 }
 
 // 读 sshStatus JSON + sshServerStatus 状态机，更新主 cell 呈现。
+// 关键：绝不对 toggle cell 调 [self reload]（重建 cell 会丢掉 UISwitch accessory，
+// 导致开关消失；返回上级再进来才重新出现）。改为缓存 cell + 直接改 textLabel/accessoryView。
 - (void)refreshFromStatusPref {
     CFPreferencesAppSynchronize(CFSTR("com.witchan.ios-mcp.preferences"));
     CFPropertyListRef v = CFPreferencesCopyAppValue(CFSTR("sshStatus"),
@@ -171,35 +174,16 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
         [self.serverStatus isEqualToString:@"starting"] ||
         [self.serverStatus isEqualToString:@"stopping"]) {
         self.busy = YES;
-        NSString *label = [self.serverStatus isEqualToString:@"installing"] ? @"安装中"
-                          : [self.serverStatus isEqualToString:@"starting"] ? @"启动中"
-                          : @"停止中";
-        [self.toggleSpec setName:label];
-        [self reload];
-        [self applyAccessorySpinner:YES];
+        [self.toggleSpec setName:[self intermediateLabel]];
+        [self renderToggleCell];
         [self scheduleStatusTimeout];
         return;
     }
 
     self.busy = NO;
-    [self applyAccessorySpinner:NO];
+    [self.toggleSpec setName:self.serverInstalled ? @"SSH 服务" : @"开始安装"];
+    [self renderToggleCell];
 
-    if (!self.serverInstalled) {
-        // 未安装：文字按钮「开始安装」，隐藏开关。
-        [self.toggleSpec setName:@"开始安装"];
-        [self reload];
-        [self setSwitchVisible:NO];
-        return;
-    }
-
-    // 已安装：显示开关，on=running。
-    [self.toggleSpec setName:@"SSH 服务"];
-    [self reload];
-    [self setSwitchVisible:YES];
-    self.toggleSwitch.on = self.serverRunning;
-
-    // 操作失败不覆盖开关文字（reload 会重建 cell 把 UISwitch 挤掉，就是这个闪退/消失的坑）。
-    // 失败原因已在 ssh 日志里，用户点「查看日志」查看。这里只留一行痕迹日志。
     if (lastError.length && !self.serverRunning) {
         [self logPrefs:@"op failed, see ssh log: %@", lastError];
     }
@@ -207,48 +191,58 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
     [self logPrefs:@"state installed=%d running=%d", self.serverInstalled ? 1 : 0, self.serverRunning ? 1 : 0];
 }
 
-// 开关位置转圈：中间态时把 toggle cell 的 accessory 换成 spinner。
-- (void)applyAccessorySpinner:(BOOL)loading {
-    UITableView *table = [self valueForKey:@"table"];
-    if (!table) return;
-    for (UITableViewCell *cell in [table visibleCells]) {
-        if (![cell.textLabel.text isEqualToString:[self.toggleSpec name]] &&
-            ![cell.textLabel.text isEqualToString:@"安装中"] &&
-            ![cell.textLabel.text isEqualToString:@"启动中"] &&
-            ![cell.textLabel.text isEqualToString:@"停止中"]) {
-            continue;
-        }
-        if (loading) {
-            UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-            [spinner startAnimating];
-            cell.accessoryView = spinner;
-        }
-    }
+- (NSString *)intermediateLabel {
+    if ([self.serverStatus isEqualToString:@"installing"]) return @"安装中";
+    if ([self.serverStatus isEqualToString:@"starting"]) return @"启动中";
+    return @"停止中";
 }
 
-// 显示/隐藏开关：仅安装在非中间态时显示 UISwitch。
-- (void)setSwitchVisible:(BOOL)visible {
-    UITableView *table = [self valueForKey:@"table"];
-    if (!table) return;
-    for (UITableViewCell *cell in [table visibleCells]) {
-        if (![cell.textLabel.text isEqualToString:@"SSH 服务"]) {
-            continue;
-        }
-        if (visible) {
-            if (self.toggleSwitch) {
-                cell.accessoryView = self.toggleSwitch;
-                self.toggleSwitch.on = self.serverRunning;
-            } else {
-                UISwitch *sw = [[UISwitch alloc] init];
-                self.toggleSwitch = sw;
-                sw.on = self.serverRunning;
-                [sw addTarget:self action:@selector(sshSwitchChanged:) forControlEvents:UIControlEventValueChanged];
-                cell.accessoryView = sw;
-            }
-        } else {
-            cell.accessoryView = nil;
-        }
+// 在 cellForRowAtIndexPath 里按文字识别并缓存 toggle cell（label 会变，用已知集合匹配）。
+- (BOOL)isToggleLabel:(NSString *)text {
+    return [text isEqualToString:@"SSH 服务"] ||
+           [text isEqualToString:@"开始安装"] ||
+           [text isEqualToString:@"安装中"] ||
+           [text isEqualToString:@"启动中"] ||
+           [text isEqualToString:@"停止中"];
+}
+
+// 直接把当前状态渲染到缓存的 toggle cell 上（textLabel + accessoryView），不 reload。
+// 这样 UISwitch 实例始终保留，不会因 reload 重建而消失。
+- (void)renderToggleCell {
+    UITableViewCell *cell = self.toggleCell;
+    if (!cell) return;
+
+    if (self.busy) {
+        cell.textLabel.text = [self intermediateLabel];
+        UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+        [spinner startAnimating];
+        cell.accessoryView = spinner;
+        return;
     }
+
+    if (!self.serverInstalled) {
+        cell.textLabel.text = @"开始安装";
+        cell.accessoryView = nil;
+        return;
+    }
+
+    cell.textLabel.text = @"SSH 服务";
+    if (!self.toggleSwitch) {
+        UISwitch *sw = [[UISwitch alloc] init];
+        self.toggleSwitch = sw;
+        [sw addTarget:self action:@selector(sshSwitchChanged:) forControlEvents:UIControlEventValueChanged];
+    }
+    self.toggleSwitch.on = self.serverRunning;
+    cell.accessoryView = self.toggleSwitch;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    UITableViewCell *cell = [super tableView:tableView cellForRowAtIndexPath:indexPath];
+    if (self.toggleSpec && [self isToggleLabel:cell.textLabel.text]) {
+        self.toggleCell = cell;
+        [self renderToggleCell];
+    }
+    return cell;
 }
 
 // 已安装时拨动开关 -> 发 start/stop 事件。
@@ -284,8 +278,10 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
     if (!self.serverInstalled) {
         self.busy = YES;
         [self postEvent:IOS_MCP_DARWIN_NOTIFICATION_SSH_INSTALL];
+        self.serverStatus = @"installing";
         [self.toggleSpec setName:@"安装中"];
-        [self reload];
+        [self renderToggleCell];
+        [self scheduleStatusTimeout];
         [self logPrefs:@"post install"];
     }
 }
@@ -304,11 +300,6 @@ static void SSHPrefsControlCallback(CFNotificationCenterRef center,
         return;
     }
     [super setPreferenceValue:value specifier:spec];
-}
-
-- (void)statusSpecPending:(NSString *)text {
-    [self.toggleSpec setName:text];
-    [self reload];
 }
 
 // 「查看日志」PSButtonCell action：手动推入 SSH 日志查看器。
