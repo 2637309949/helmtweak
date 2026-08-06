@@ -61,6 +61,8 @@ static void ios_mcp_stop_server(void) {
     [[MCPServer sharedInstance] stop];
 }
 
+static NSString *ios_mcp_read_ssh_server_status(void);
+
 static void ios_mcp_write_ssh_status_preference(NSDictionary *status, BOOL preserveIntermediate) {
     NSData *jsonData = nil;
     if ([NSJSONSerialization isValidJSONObject:status]) {
