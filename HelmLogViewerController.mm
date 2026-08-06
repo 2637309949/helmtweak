@@ -30,7 +30,7 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.view.backgroundColor = [UIColor systemBackgroundColor];
+    self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
     self.edgesForExtendedLayout = UIRectEdgeNone;
 
     _textView = [[UITextView alloc] initWithFrame:self.view.bounds];
@@ -40,7 +40,7 @@
     _textView.dataDetectorTypes = UIDataDetectorTypeNone;
     _textView.font = [UIFont fontWithName:@"Menlo" size:12.0];
     _textView.textColor = [UIColor labelColor];
-    _textView.backgroundColor = [UIColor systemBackgroundColor];
+    _textView.backgroundColor = [UIColor clearColor];
     _textView.textContainerInset = UIEdgeInsetsMake(12, 12, 12, 12);
     [self.view addSubview:_textView];
 
